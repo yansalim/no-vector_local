@@ -21,8 +21,8 @@ export default function UploadSection({
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     
-    if (files.length > 10) {
-      setError('Maximum 10 files allowed');
+    if (files.length > 100) {
+      setError('Maximum 100 files allowed');
       return;
     }
 
@@ -90,7 +90,7 @@ export default function UploadSection({
       {/* File Upload */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Select PDF Files (max 10)
+          Select PDF Files (max 100)
         </label>
         <div 
           className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors cursor-pointer"

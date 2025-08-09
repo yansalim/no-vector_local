@@ -23,16 +23,17 @@ class LLMService:
             "gpt-5-mini": {"input": 0.25, "output": 2.0},
         }
 
-    def calculate_cost(self, usage_data, model="gpt-4"):
+    def calculate_cost(self, usage_data, model="gpt-5-mini"):
+        print(usage_data)
         """Calculate cost based on token usage"""
         if not usage_data or model not in self.pricing:
             return 0.0
 
-        input_tokens = usage_data.get("input_tokens", 0)
-        output_tokens = usage_data.get("output_tokens", 0)
+        input_tokens = usage_data.prompt_tokens
+        output_tokens = usage_data.completion_tokens
 
-        input_cost = (input_tokens / 1_000_000) * self.pricing[model]["input"]
-        output_cost = (output_tokens / 1_000_000) * self.pricing[model]["output"]
+        input_cost = (input_tokens / 1_000_000 * 1.0) * self.pricing[model]["input"]
+        output_cost = (output_tokens / 1_000_000 * 1.0) * self.pricing[model]["output"]
 
         return input_cost + output_cost
 
@@ -44,10 +45,6 @@ class LLMService:
         chat_history: List[Dict[str, Any]] = None,
     ) -> tuple[List[Dict[str, Any]], float]:
         """Select relevant documents based on description, question, and chat history"""
-
-        if not self.client:
-            # Fallback: return all documents when OpenAI is not available
-            return documents, 0.0
 
         doc_summaries = []
         for doc in documents:
@@ -73,20 +70,20 @@ class LLMService:
                 history_context += f"{role.capitalize()}: {content}\n"
 
         prompt = f"""
-Based on the following document collection description, chat history, and current question, 
-select which documents are most likely to contain the answer.
+            Based on the following document collection description, chat history, and current question, 
+            select which documents are most likely to contain the answer.
 
-Document Collection Description: {description}
+            Document Collection Description: {description}
 
-Available Documents:
-{json.dumps(doc_summaries, indent=2)}
-{history_context}
-Current Question: {question}
+            Available Documents:
+            {json.dumps(doc_summaries, indent=2)}
+            {history_context}
+            Current Question: {question}
 
-Return a JSON array of filenames that are most relevant to the current question and conversation context.
-Only return the JSON array, no other text.
-Example: ["document1.pdf", "document2.pdf"]
-"""
+            Return a JSON array of filenames that are most relevant to the current question and conversation context.
+            Only return the JSON array, no other text.
+            Example: ["document1.pdf", "document2.pdf"]
+            """
 
         try:
             response = await self.client.chat.completions.create(
@@ -95,7 +92,7 @@ Example: ["document1.pdf", "document2.pdf"]
             )
 
             selected_filenames = json.loads(response.choices[0].message.content)
-            cost = self.calculate_cost(response.usage.model_dump(), "gpt-5-mini")
+            cost = self.calculate_cost(response.usage, "gpt-5-mini")
 
             # Return full document objects for selected filenames
             selected_docs = []
@@ -118,15 +115,6 @@ Example: ["document1.pdf", "document2.pdf"]
         chat_history: List[Dict[str, Any]] = None,
     ) -> tuple[List[Dict[str, Any]], float]:
         """Find relevant pages by processing 20 pages at a time in parallel"""
-
-        if not self.client:
-            # Fallback: return first 3 pages when OpenAI is not available
-            fallback_pages = []
-            for page in pages[:3]:
-                page_with_source = page.copy()
-                page_with_source["source_document"] = filename
-                fallback_pages.append(page_with_source)
-            return fallback_pages, 0.0
 
         # Create chunks of 20 pages
         chunks = []
@@ -194,29 +182,36 @@ Example: ["document1.pdf", "document2.pdf"]
         history_context = ""
         if chat_history:
             history_context = "\n\nRecent Chat History:\n"
-            for msg in chat_history[-3:]:  # Include last 3 messages for context
+            for msg in chat_history:
                 if hasattr(msg, "role"):
                     role = msg.role
-                    content = msg.content[:200]  # Truncate for context
+                    content = msg.content
                 else:
                     role = msg.get("role", "unknown")
-                    content = msg.get("content", "")[:200]  # Truncate for context
+                    content = msg.get("content", "")
                 history_context += f"{role.capitalize()}: {content}...\n"
 
         prompt = f"""
-Analyze the following pages from document "{filename}" and determine 
-which pages are relevant to the current question, considering the conversation context.
+            Analyze the following pages from document "{filename}" and determine 
+            which pages are relevant to the current question, considering the conversation context. 
+            Return empty array if no pages are relevant.
+            
+            <Chat History>
+            {history_context}
+            <Chat History>
+            
+            <Current Question>
+            {question}
+            <Current Question>
 
-{history_context}
-Current Question: {question}
+            <Document Page Content>
+            {json.dumps(pages_content, indent=2)}
+            <Document Page Content>
 
-Pages:
-{json.dumps(pages_content, indent=2)}
-
-Return a JSON array of page numbers that are relevant to the current question and conversation context.
-Only return the JSON array, no other text.
-Example: [1, 3, 5]
-"""
+            Return a JSON array of page numbers relevant to the current question
+            Only return the JSON array, no other text.
+            Example: [1, 3, 5]
+            """
 
         try:
             response = await self.client.chat.completions.create(
@@ -225,7 +220,7 @@ Example: [1, 3, 5]
             )
 
             relevant_page_numbers = json.loads(response.choices[0].message.content)
-            cost = self.calculate_cost(response.usage.model_dump(), "gpt-5-mini")
+            cost = self.calculate_cost(response.usage, model="gpt-5-mini")
 
             # Add full page data for relevant pages
             relevant_pages = []
@@ -251,73 +246,6 @@ Example: [1, 3, 5]
                 return [first_page], 0.0
             return [], 0.0
 
-    async def generate_answer(
-        self, relevant_pages: List[Dict[str, Any]], question: str
-    ) -> str:
-        """Generate final answer using all relevant pages (non-streaming)"""
-
-        if not relevant_pages:
-            return "I couldn't find any relevant information to answer your question."
-
-        if not self.client:
-            # Fallback response when OpenAI is not available
-            context_preview = ""
-            for page in relevant_pages[:2]:
-                context_preview += (
-                    f"From {page['source_document']} (Page {page['page_number']}): "
-                )
-                context_preview += page["text"][:200] + "...\n\n"
-
-            return f"""**OpenAI API not configured - showing document preview:**
-
-Question: {question}
-
-Relevant content found:
-{context_preview}
-
-To get AI-powered answers, please set your OpenAI API key in backend/.env file:
-OPENAI_API_KEY=your_actual_api_key_here"""
-
-        # Prepare content from all relevant pages
-        context = ""
-        for page in relevant_pages:
-            context += (
-                f"\n--- Page {page['page_number']} from {page['source_document']} ---\n"
-            )
-            context += page["text"]
-            context += "\n"
-
-        prompt = f"""
-Based on the following context from PDF documents, answer the question. 
-Provide answer and cite which documents and pages you're referencing.
-
-IMPORTANT: When referencing specific pages, use this special format:
-$PAGE_START{{filename}}:{{page_numbers}}$PAGE_END
-
-Examples:
-- For single page: $PAGE_STARTreport.pdf:5$PAGE_END
-- For multiple pages: $PAGE_STARTanalysis.pdf:2,7,12$PAGE_END 
-- For page range: $PAGE_STARTmanual.pdf:15-18$PAGE_END
-
-Context:
-{context}
-
-Question: {question}
-
-Please provide answer based on the information in the documents and use the special page reference format when citing specific pages.
-"""
-
-        try:
-            response = await self.client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[{"role": "user", "content": prompt}],
-            )
-
-            return response.choices[0].message.content
-
-        except Exception as e:
-            return f"Error generating answer: {str(e)}"
-
     async def generate_answer_stream(
         self,
         relevant_pages: List[Dict[str, Any]],
@@ -328,31 +256,6 @@ Please provide answer based on the information in the documents and use the spec
 
         if not relevant_pages:
             yield "I couldn't find any relevant information to answer your question."
-            return
-
-        if not self.client:
-            # Fallback response when OpenAI is not available
-            context_preview = ""
-            for page in relevant_pages[:2]:
-                context_preview += (
-                    f"From {page['source_document']} (Page {page['page_number']}): "
-                )
-                context_preview += page["text"][:200] + "...\n\n"
-
-            fallback_text = f"""**OpenAI API not configured - showing document preview:**
-
-Question: {question}
-
-Relevant content found:
-{context_preview}
-
-To get AI-powered answers, please set your OpenAI API key in backend/.env file:
-OPENAI_API_KEY=your_actual_api_key_here"""
-
-            # Simulate streaming for fallback
-            for char in fallback_text:
-                yield char
-                await asyncio.sleep(0.01)  # Small delay to simulate streaming
             return
 
         # Prepare content from all relevant pages
@@ -378,26 +281,28 @@ OPENAI_API_KEY=your_actual_api_key_here"""
                 history_context += f"{role.capitalize()}: {content}\n"
 
         prompt = f"""
-Based on the following context from PDF documents and the conversation history, answer the current question. 
-Provide a comprehensive answer that builds on the conversation and cite which documents and pages you're referencing.
+            Based on the following chat history context, PDF document context, and current question, answer the question. 
+            Provide answer and cite which documents and pages you're referencing.
 
-IMPORTANT: When referencing specific pages, use this special format:
-$PAGE_START{{filename}}:{{page_numbers}}$PAGE_END
+            IMPORTANT: When referencing specific pages, use this special format:
+            $PAGE_START{{filename}}:{{page_numbers}}$PAGE_END
 
-Examples:
-- For single page: $PAGE_STARTreport.pdf:5$PAGE_END
-- For multiple pages: $PAGE_STARTanalysis.pdf:2,7,12$PAGE_END 
-- For page range: $PAGE_STARTmanual.pdf:15-18$PAGE_END
+            Examples:
+            - For single page: $PAGE_STARTreport.pdf:5$PAGE_END
+            - For multiple pages: $PAGE_STARTanalysis.pdf:2,7,12$PAGE_END 
+            - For page range: $PAGE_STARTmanual.pdf:15-18$PAGE_END
 
-Document Context:
-{context}
-{history_context}
-Current Question: {question}
+            <Chat History>
+            {context}
+            <Chat History>
 
-Please provide a answer based on the information in the documents and the conversation context.
-If this question relates to previous questions in the conversation, acknowledge that connection.
-Use the special page reference format whenever citing specific pages.
-"""
+            <Current Question>
+            {question}
+            <Current Question>
+
+            Please provide answer based on the information in the documents and use the special page reference format when citing specific pages.
+            No need to mention the chat history in the answer, just focus on the current question.
+            """
 
         try:
             stream = await self.client.chat.completions.create(
