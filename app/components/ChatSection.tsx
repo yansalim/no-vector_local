@@ -2,12 +2,33 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
+import dynamic from 'next/dynamic';
 
-// Set up PDF.js worker - use jsDelivr CDN with version matching react-pdf
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Dynamically import react-pdf components to avoid SSR issues
+const Document = dynamic(
+  () => import('react-pdf').then((mod) => mod.Document),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="ml-3 text-gray-600">Loading PDF viewer...</span>
+      </div>
+    )
+  }
+);
+
+const Page = dynamic(
+  () => import('react-pdf').then((mod) => mod.Page),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+);
 
 interface Message {
   id: string;
@@ -57,6 +78,15 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
   const [selectedModel, setSelectedModel] = useState<string>('gpt-5-mini');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Import PDF.js worker setup only on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      import('react-pdf').then((pdfjs) => {
+        pdfjs.pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.pdfjs.version}/build/pdf.worker.min.mjs`;
+      });
+    }
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
