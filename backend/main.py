@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime
 import shutil
 from pathlib import Path
+import os
+import tempfile
 
 from models import (
     ChatRequest,
@@ -41,14 +43,53 @@ app.add_middleware(
 pdf_processor = PDFProcessor()
 llm_service = LLMService()
 
-# Storage directories
-UPLOAD_DIR = Path("uploads")
-SESSION_DIR = Path("sessions")
+# Storage directories - use /tmp for serverless environments
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    # Use temp directory for serverless environments
+    UPLOAD_DIR = Path(tempfile.gettempdir()) / "uploads"
+    SESSION_DIR = Path(tempfile.gettempdir()) / "sessions"
+else:
+    # Use local directories for development
+    UPLOAD_DIR = Path("uploads")
+    SESSION_DIR = Path("sessions")
+
 UPLOAD_DIR.mkdir(exist_ok=True)
 SESSION_DIR.mkdir(exist_ok=True)
 
+# Debug logging for serverless environments
+print(f"Upload directory: {UPLOAD_DIR}")
+print(f"Session directory: {SESSION_DIR}")
+print(
+    f"Environment: VERCEL={os.environ.get('VERCEL')}, AWS_LAMBDA={os.environ.get('AWS_LAMBDA_FUNCTION_NAME')}"
+)
+
 # In-memory storage for sessions (in production, use a database)
 sessions = {}
+
+
+# Load existing sessions from disk on startup (for serverless recovery)
+def load_sessions_from_disk():
+    """Load sessions from JSON files on disk"""
+    global sessions
+    if SESSION_DIR.exists():
+        for session_file in SESSION_DIR.glob("*.json"):
+            try:
+                with open(session_file, "r") as f:
+                    session_data = json.load(f)
+                    # Convert timestamp back to datetime
+                    session_data["created_at"] = datetime.fromisoformat(
+                        session_data["created_at"]
+                    )
+                    from models import SessionData
+
+                    sessions[session_data["session_id"]] = SessionData(**session_data)
+                    print(f"Loaded session: {session_data['session_id']}")
+            except Exception as e:
+                print(f"Error loading session {session_file}: {e}")
+
+
+# Load sessions on startup
+load_sessions_from_disk()
 
 
 @app.post("/upload", response_model=UploadResponse)

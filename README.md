@@ -41,17 +41,18 @@ The system follows a 3-step process for each question:
    npm install
    ```
 
-3. **Configure environment variables**:
-   Create a `.env.local` file in the root directory:
+3. **Configure environment variables** (optional):
+   For local development, you can create a `.env.local` file:
    ```bash
-   # For local development
-   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+   # Optional for local development if using different backend URL
+   # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
    
-   # For production, update to your actual BACKEND API URL:
+   # For separate backend deployments only:
    # NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.railway.app
    # NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.herokuapp.com
-   # NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
    ```
+   
+   **Note**: For Vercel deployment, no environment variables are needed for the frontend - it auto-detects the API URL.
 
 4. **Set up the backend**:
    ```bash
@@ -187,18 +188,29 @@ vectorless-chatbot/
 
 ## Production Deployment
 
+### Quick Start for Vercel
+
+**The easiest way to deploy:**
+1. Push your code to GitHub
+2. Connect to Vercel
+3. Set **only** one environment variable: `OPENAI_API_KEY=your_key`
+4. Deploy! ✅
+
+**No other configuration needed** - the app automatically detects Vercel and uses `/api` routes.
+
 ### Environment Configuration
 
 For production deployment, make sure to set the following environment variables:
 
-**Frontend (.env.local or build environment):**
+**Frontend environment variables:**
 ```bash
-# Set this to your BACKEND API URL, not your frontend URL
+# For Vercel single-project deployment:
+# NO ENVIRONMENT VARIABLES NEEDED! 🎉
+
+# For separate backend deployments only:
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.railway.app
 # OR
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.herokuapp.com
-# OR
-NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
 ```
 
 **Backend (environment variables):**
@@ -212,9 +224,12 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 1. **Deploy to Vercel:**
    - The project is already configured with `vercel.json` to handle both frontend and backend
-   - Set `OPENAI_API_KEY` environment variable in Vercel dashboard
+   - In Vercel dashboard, set **only** this environment variable:
+     ```bash
+     OPENAI_API_KEY=your_openai_api_key_here
+     ```
    - Deploy the entire project to Vercel
-   - No need to set `NEXT_PUBLIC_API_BASE_URL` - it will automatically use `/api`
+   - ✅ **No `NEXT_PUBLIC_API_BASE_URL` needed** - automatically uses `/api` routes
 
 #### **Option 2: Separate Vercel Projects**
 
@@ -240,9 +255,10 @@ OPENAI_API_KEY=your_openai_api_key_here
    - Start server: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 ### Important Notes
-- Update CORS origins in `backend/main.py` to include your production frontend URL
-- Consider using a database instead of in-memory storage for sessions
-- Set up proper file storage (S3, etc.) instead of local uploads directory
+- **File Storage**: Vercel uses temporary storage (`/tmp`) - files are deleted between function calls
+- **Sessions**: Currently stored in memory and temporary files - consider using a database for production
+- **CORS**: Update CORS origins in `backend/main.py` to include your production frontend URL
+- **Scalability**: For heavy usage, consider dedicated file storage (S3, etc.) and database
 
 ## Troubleshooting
 
@@ -250,8 +266,17 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 1. **"Upload failed"**: Check that the backend is running and CORS is configured
 2. **"Error generating answer"**: Verify your OpenAI API key is set correctly
-3. **"Failed to load PDF"**: Check that `NEXT_PUBLIC_API_BASE_URL` is set correctly
+3. **"Failed to load PDF"**: Check that your API is properly deployed and accessible
 4. **Component import errors**: Ensure all TypeScript files are saved
+
+### API URL Debugging
+
+The app automatically detects the correct API URL:
+- **Vercel deployment**: Uses `https://your-project.vercel.app/api`
+- **Local development**: Uses `http://localhost:8000`
+- **Other deployments**: Uses `NEXT_PUBLIC_API_BASE_URL` if set
+
+Check the browser console for "API Base URL:" to see what URL is being used.
 
 ### Backend Logs
 Check the backend terminal for detailed error messages and processing logs.
