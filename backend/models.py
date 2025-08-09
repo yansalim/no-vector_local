@@ -19,6 +19,7 @@ class ChatResponse(BaseModel):
     answer: str
     selected_documents: List[str]
     relevant_pages_count: int
+    total_cost: Optional[float] = 0.0
 
 
 class UploadResponse(BaseModel):
@@ -31,3 +32,4 @@ class SessionData(BaseModel):
     description: str
     documents: List[Dict[str, Any]]
     created_at: datetime
+    total_session_cost: Optional[float] = 0.0

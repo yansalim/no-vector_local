@@ -223,15 +223,18 @@ async def chat_stream(request: ChatRequest):
 
     async def stream_response():
         try:
+            total_cost = 0.0
+
             # Step 1: Select relevant documents based on description and question
             step1_start = time.time()
             print(f"⏱️ Step 1: Starting document selection...")
-            selected_docs = await llm_service.select_documents(
+            selected_docs, step1_cost = await llm_service.select_documents(
                 session_data.description,
                 session_data.documents,
                 request.question,
                 request.chat_history,
             )
+            total_cost += step1_cost
             step1_time = time.time() - step1_start
             print(f"✅ Step 1: Document selection completed in {step1_time:.2f}s")
             print(
@@ -262,19 +265,29 @@ async def chat_stream(request: ChatRequest):
 
             # Combine results
             relevant_pages = []
+            step2_cost = 0.0
             for i, result in enumerate(doc_results):
                 if isinstance(result, Exception):
                     print(
                         f"❌ Error processing {selected_docs[i]['filename']}: {result}"
                     )
                     continue
-                if isinstance(result, list):
+                if isinstance(result, tuple) and len(result) == 2:
+                    pages, cost = result
+                    step2_cost += cost
+                    print(
+                        f"✅ Document {selected_docs[i]['filename']}: {len(pages)} relevant pages"
+                    )
+                    relevant_pages.extend(pages)
+                elif isinstance(result, list):
+                    # Fallback for old format
                     print(
                         f"✅ Document {selected_docs[i]['filename']}: {len(result)} relevant pages"
                     )
                     relevant_pages.extend(result)
 
             step2_time = time.time() - step2_start
+            total_cost += step2_cost
             print(f"✅ Step 2: Parallel page detection completed in {step2_time:.2f}s")
             print(f"📄 Total relevant pages found: {len(relevant_pages)}")
 
@@ -287,6 +300,7 @@ async def chat_stream(request: ChatRequest):
                     "document_selection": step1_time,
                     "page_detection": step2_time,
                 },
+                "cost": total_cost,
             }
             yield f"data: {json.dumps(metadata)}\n\n"
 
@@ -310,10 +324,17 @@ async def chat_stream(request: ChatRequest):
                 f"📊 Timing breakdown: Doc Selection: {step1_time:.2f}s | Page Detection: {step2_time:.2f}s | Answer Gen: {step3_time:.2f}s"
             )
 
+            # Update session cost
+            session_data.total_session_cost = (
+                session_data.total_session_cost or 0.0
+            ) + total_cost
+
             # Send final metadata
             final_metadata = {
                 "type": "complete",
                 "total_time": total_time,
+                "total_cost": total_cost,
+                "session_cost": session_data.total_session_cost,
                 "timing_breakdown": {
                     "document_selection": step1_time,
                     "page_detection": step2_time,
@@ -351,6 +372,7 @@ async def get_session(session_id: str):
         "description": session_data.description,
         "documents": session_data.documents,  # Return full document data including pages
         "created_at": session_data.created_at,
+        "total_session_cost": session_data.total_session_cost or 0.0,
     }
 
 

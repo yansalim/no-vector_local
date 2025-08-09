@@ -33,6 +33,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   const [showDocuments, setShowDocuments] = useState(true);
   const [selectedPage, setSelectedPage] = useState<{content: string, pageNumber: number, filename: string, sessionId: string} | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -54,6 +55,8 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
       if (response.ok) {
         const info = await response.json();
         setSessionInfo(info);
+
+        setTotalSessionCost(info.total_session_cost || 0);
       }
     } catch (error) {
       console.error('Error fetching session info:', error);
@@ -135,6 +138,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               
               if (data.type === 'metadata') {
                 // Update message metadata
+
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessageId 
                     ? {
@@ -158,7 +162,10 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                     : msg
                 ));
               } else if (data.type === 'complete') {
-                // Streaming complete
+                // Streaming complete - update session cost
+                if (data.session_cost !== undefined) {
+                  setTotalSessionCost(data.session_cost);
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.error);
               }
@@ -322,7 +329,12 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
-              <span className="text-xs text-gray-500">{sessionInfo.documents.length} files</span>
+              <div className="flex items-center space-x-3">
+                <span className="text-xs text-gray-500">{sessionInfo.documents.length} files</span>
+                <span className="text-xs font-medium text-green-600">
+                  Cost: ${totalSessionCost.toFixed(4)}
+                </span>
+              </div>
             </div>
             {showDocuments && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

@@ -10,7 +10,7 @@ load_dotenv()
 
 class LLMService:
     def __init__(self):
-        api_key = os.environ("OPENAI_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key or api_key == "your_openai_api_key_here":
             print("⚠️  OpenAI API key not set. LLM features will be disabled.")
             self.client = None
@@ -18,18 +18,36 @@ class LLMService:
             self.client = AsyncOpenAI(api_key=api_key)
         self.model = "gpt-4"
 
+        self.pricing = {
+            "gpt-5": {"input": 1.25, "output": 10.0},
+            "gpt-5-mini": {"input": 0.25, "output": 2.0},
+        }
+
+    def calculate_cost(self, usage_data, model="gpt-4"):
+        """Calculate cost based on token usage"""
+        if not usage_data or model not in self.pricing:
+            return 0.0
+
+        input_tokens = usage_data.get("input_tokens", 0)
+        output_tokens = usage_data.get("output_tokens", 0)
+
+        input_cost = (input_tokens / 1_000_000) * self.pricing[model]["input"]
+        output_cost = (output_tokens / 1_000_000) * self.pricing[model]["output"]
+
+        return input_cost + output_cost
+
     async def select_documents(
         self,
         description: str,
         documents: List[Dict[str, Any]],
         question: str,
         chat_history: List[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], float]:
         """Select relevant documents based on description, question, and chat history"""
 
         if not self.client:
             # Fallback: return all documents when OpenAI is not available
-            return documents
+            return documents, 0.0
 
         doc_summaries = []
         for doc in documents:
@@ -77,6 +95,7 @@ Example: ["document1.pdf", "document2.pdf"]
             )
 
             selected_filenames = json.loads(response.choices[0].message.content)
+            cost = self.calculate_cost(response.usage.model_dump(), "gpt-5-mini")
 
             # Return full document objects for selected filenames
             selected_docs = []
@@ -84,12 +103,12 @@ Example: ["document1.pdf", "document2.pdf"]
                 if doc["filename"] in selected_filenames:
                     selected_docs.append(doc)
 
-            return selected_docs
+            return selected_docs, cost
 
         except Exception as e:
             print(f"Error in document selection: {e}")
             # Fallback: return all documents
-            return documents
+            return documents, 0.0
 
     async def find_relevant_pages(
         self,
@@ -97,7 +116,7 @@ Example: ["document1.pdf", "document2.pdf"]
         question: str,
         filename: str,
         chat_history: List[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], float]:
         """Find relevant pages by processing 20 pages at a time in parallel"""
 
         if not self.client:
@@ -107,7 +126,7 @@ Example: ["document1.pdf", "document2.pdf"]
                 page_with_source = page.copy()
                 page_with_source["source_document"] = filename
                 fallback_pages.append(page_with_source)
-            return fallback_pages
+            return fallback_pages, 0.0
 
         # Create chunks of 20 pages
         chunks = []
@@ -128,14 +147,20 @@ Example: ["document1.pdf", "document2.pdf"]
 
         # Combine results from all chunks
         relevant_pages = []
+        total_cost = 0.0
         for result in chunk_results:
             if isinstance(result, Exception):
                 print(f"Error in chunk processing: {result}")
                 continue
-            if isinstance(result, list):
+            if isinstance(result, tuple) and len(result) == 2:
+                pages, cost = result
+                relevant_pages.extend(pages)
+                total_cost += cost
+            elif isinstance(result, list):
+                # Fallback for old format
                 relevant_pages.extend(result)
 
-        return relevant_pages
+        return relevant_pages, total_cost
 
     async def _process_page_chunk(
         self,
@@ -144,7 +169,7 @@ Example: ["document1.pdf", "document2.pdf"]
         filename: str,
         chunk_index: int,
         chat_history: List[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], float]:
         """Process a single chunk of pages"""
         import time
 
@@ -200,6 +225,7 @@ Example: [1, 3, 5]
             )
 
             relevant_page_numbers = json.loads(response.choices[0].message.content)
+            cost = self.calculate_cost(response.usage.model_dump(), "gpt-5-mini")
 
             # Add full page data for relevant pages
             relevant_pages = []
@@ -213,7 +239,7 @@ Example: [1, 3, 5]
             print(
                 f"    ✅ Chunk {chunk_index + 1} completed in {chunk_time:.2f}s, found {len(relevant_pages)} relevant pages"
             )
-            return relevant_pages
+            return relevant_pages, cost
 
         except Exception as e:
             chunk_time = time.time() - chunk_start
@@ -222,8 +248,8 @@ Example: [1, 3, 5]
             if chunk:
                 first_page = chunk[0].copy()
                 first_page["source_document"] = filename
-                return [first_page]
-            return []
+                return [first_page], 0.0
+            return [], 0.0
 
     async def generate_answer(
         self, relevant_pages: List[Dict[str, Any]], question: str
