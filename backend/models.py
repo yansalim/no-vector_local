@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
     session_id: str
     question: str
     chat_history: Optional[List[ChatMessage]] = []
+    model: Optional[str] = "gpt-5-mini"  # Default to gpt-5-mini
 
 
 class ChatResponse(BaseModel):

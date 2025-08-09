@@ -14,9 +14,30 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  isStreaming?: boolean;
+  progress?: {
+    status: string;
+    step: number;
+    total: number;
+    stepCost?: number;
+    stepTime?: number;
+  };
   metadata?: {
-    selectedDocuments?: string[];
+    selectedDocuments?: Array<{id: number, filename: string}>;
     relevantPagesCount?: number;
+    timing?: {
+      document_selection?: number;
+      page_detection?: number;
+      answer_generation?: number;
+      total_time?: number;
+    };
+    costs?: {
+      document_selection?: number;
+      page_detection?: number;
+      answer_generation?: number;
+      total_cost?: number;
+    };
+    model?: string;
   };
 }
 
@@ -34,6 +55,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   const [selectedPage, setSelectedPage] = useState<{content: string, pageNumber: number, filename: string, sessionId: string} | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
+  const [selectedModel, setSelectedModel] = useState<string>('gpt-5-mini');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -85,6 +107,12 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
       role: 'assistant',
       content: '',
       timestamp: new Date(),
+      isStreaming: true,
+      progress: {
+        status: 'Starting...',
+        step: 0,
+        total: 3,
+      },
       metadata: {
         selectedDocuments: [],
         relevantPagesCount: 0,
@@ -102,6 +130,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
         body: JSON.stringify({
           session_id: sessionId,
           question: question,
+          model: selectedModel,
           chat_history: messages.map(msg => ({
             role: msg.role,
             content: msg.content,
@@ -136,16 +165,39 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             try {
               const data = JSON.parse(line.slice(6));
               
-              if (data.type === 'metadata') {
-                // Update message metadata
-
+              if (data.type === 'status') {
+                // Update progress status in the message
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessageId 
                     ? {
                         ...msg,
+                        progress: {
+                          status: data.message,
+                          step: data.step_number,
+                          total: data.total_steps,
+                        }
+                      }
+                    : msg
+                ));
+              } else if (data.type === 'step_complete') {
+                // Step completed - update progress and metadata
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantMessageId 
+                    ? {
+                        ...msg,
+                        progress: {
+                          ...msg.progress!,
+                          stepCost: data.cost,
+                          stepTime: data.time_taken,
+                        },
                         metadata: {
-                          selectedDocuments: data.selected_documents,
-                          relevantPagesCount: data.relevant_pages_count,
+                          ...msg.metadata,
+                          ...(data.step === 'document_selection' && {
+                            selectedDocuments: data.selected_documents,
+                          }),
+                          ...(data.step === 'page_selection' && {
+                            relevantPagesCount: data.relevant_pages_count,
+                          }),
                         }
                       }
                     : msg
@@ -162,10 +214,26 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                     : msg
                 ));
               } else if (data.type === 'complete') {
-                // Streaming complete - update session cost
+                // Streaming complete - update session cost and final metadata
                 if (data.session_cost !== undefined) {
                   setTotalSessionCost(data.session_cost);
                 }
+                
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantMessageId 
+                    ? {
+                        ...msg,
+                        isStreaming: false,
+                        progress: undefined,
+                        metadata: {
+                          ...msg.metadata,
+                          timing: data.timing_breakdown,
+                          costs: data.cost_breakdown,
+                          model: selectedModel
+                        }
+                      }
+                    : msg
+                ));
               } else if (data.type === 'error') {
                 throw new Error(data.error);
               }
@@ -181,7 +249,9 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
         msg.id === assistantMessageId 
           ? {
               ...msg,
-              content: 'Sorry, I encountered an error while processing your question. Please try again.'
+              content: 'Sorry, I encountered an error while processing your question. Please try again.',
+              isStreaming: false,
+              progress: undefined
             }
           : msg
       ));
@@ -291,7 +361,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg h-[700px] flex flex-col">
+    <div className="bg-white rounded-lg shadow-lg h-screen flex flex-col">
       {/* Header */}
       <div className="border-b border-gray-200 p-4">
         <div className="flex justify-between items-center mb-3">
@@ -350,7 +420,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-gray-700 truncate" title={doc.filename}>
-                      {doc.filename}
+                      ID {doc.id}: {doc.filename}
                     </p>
                     <p className="text-xs text-gray-500">
                       {doc.total_pages} pages
@@ -392,6 +462,33 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                   : 'bg-gray-100 text-gray-900'
               }`}
             >
+              {/* Progress indicator for streaming messages */}
+              {message.isStreaming && message.progress && (
+                <div className="mb-3 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span className="text-sm font-medium text-blue-800">
+                      {message.progress.status}
+                    </span>
+                  </div>
+                  
+                  {/* Progress bar */}
+                  <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${(message.progress.step / message.progress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                  
+                  <div className="flex justify-between text-xs text-blue-600">
+                    <span>Step {message.progress.step} of {message.progress.total}</span>
+                    {message.progress.stepTime && message.progress.stepCost && (
+                      <span>{message.progress.stepTime.toFixed(2)}s • ${message.progress.stepCost.toFixed(4)}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="prose prose-sm max-w-none">
                 <ReactMarkdown
                   components={{
@@ -456,9 +553,24 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                 </ReactMarkdown>
               </div>
               {message.metadata && (
-                <div className="mt-2 text-xs opacity-75">
-                  <p>Documents used: {message.metadata.selectedDocuments?.join(', ')}</p>
-                  <p>Relevant pages found: {message.metadata.relevantPagesCount}</p>
+                <div className="mt-2 text-xs opacity-60 space-y-1">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {message.metadata.selectedDocuments && (
+                      <span><span className="font-medium">Docs:</span> {message.metadata.selectedDocuments.map(doc => `${doc.filename} (ID: ${doc.id})`).join(', ')}</span>
+                    )}
+                    {message.metadata.relevantPagesCount && (
+                      <span><span className="font-medium">Pages:</span> {message.metadata.relevantPagesCount}</span>
+                    )}
+                    {message.metadata.model && (
+                      <span><span className="font-medium">Model:</span> {message.metadata.model}</span>
+                    )}
+                    {message.metadata.timing?.total_time && (
+                      <span><span className="font-medium">Time:</span> {message.metadata.timing.total_time.toFixed(1)}s</span>
+                    )}
+                    {message.metadata.costs?.total_cost && (
+                      <span><span className="font-medium">Cost:</span> ${message.metadata.costs.total_cost.toFixed(4)}</span>
+                    )}
+                  </div>
                 </div>
               )}
               <p className={`text-xs mt-1 ${
@@ -470,22 +582,46 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
           </div>
         ))}
 
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 text-gray-900 p-3 rounded-lg">
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                <span>Thinking...</span>
-              </div>
-            </div>
-          </div>
-        )}
+
 
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
       <div className="border-t border-gray-200 p-4">
+        {/* Model Selection */}
+        <div className="mb-3">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            AI Model:
+          </label>
+          <div className="flex space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="model"
+                value="gpt-5-mini"
+                checked={selectedModel === 'gpt-5-mini'}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={isLoading}
+                className="text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">GPT-5 Mini (Faster, Lower Cost)</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="model"
+                value="gpt-5"
+                checked={selectedModel === 'gpt-5'}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={isLoading}
+                className="text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">GPT-5 (Higher Quality, Higher Cost)</span>
+            </label>
+          </div>
+        </div>
+        
         <div className="flex space-x-2">
           <textarea
             value={currentQuestion}

@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 import os
 
-from models import ChatRequest, ChatResponse, UploadResponse, SessionData
+from models import ChatRequest, UploadResponse, SessionData
 from pdf_processor import PDFProcessor
 from llm_service import LLMService
 
@@ -67,7 +67,7 @@ async def upload_documents(
 
     # Save files and process them
     document_info = []
-    for file in files:
+    for i, file in enumerate(files):
         file_path = session_dir / file.filename
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -77,6 +77,7 @@ async def upload_documents(
             pages = pdf_processor.extract_pages(str(file_path))
             document_info.append(
                 {
+                    "id": i + 1,  # Sequential ID starting from 1
                     "filename": file.filename,
                     "path": str(file_path),
                     "pages": pages,
@@ -133,7 +134,18 @@ async def chat_stream(request: ChatRequest):
 
             # Step 1: Select relevant documents based on description and question
             step1_start = time.time()
-            print(f"⏱️ Step 1: Starting document selection...")
+
+            # Send status update for document selection
+            doc_selection_status = {
+                "type": "status",
+                "step": "document_selection",
+                "message": "Finding relevant documents...",
+                "step_number": 1,
+                "total_steps": 3,
+            }
+            yield f"data: {json.dumps(doc_selection_status)}\n\n"
+
+            print("⏱️ Step 1: Starting document selection...")
             selected_docs, step1_cost = await llm_service.select_documents(
                 session_data.description,
                 session_data.documents,
@@ -144,12 +156,39 @@ async def chat_stream(request: ChatRequest):
             step1_time = time.time() - step1_start
             print(f"✅ Step 1: Document selection completed in {step1_time:.2f}s")
             print(
-                f"📑 Selected {len(selected_docs)} documents: {[doc['filename'] for doc in selected_docs]}"
+                f"📑 Selected {len(selected_docs)} documents: "
+                f"{[(doc['id'], doc['filename']) for doc in selected_docs]}"
             )
+
+            # Send completion status for document selection
+            doc_selection_complete = {
+                "type": "step_complete",
+                "step": "document_selection",
+                "message": f"Found {len(selected_docs)} relevant documents",
+                "selected_documents": [
+                    {"id": doc["id"], "filename": doc["filename"]}
+                    for doc in selected_docs
+                ],
+                "time_taken": step1_time,
+                "cost": step1_cost,
+                "step_number": 1,
+            }
+            yield f"data: {json.dumps(doc_selection_complete)}\n\n"
 
             # Step 2: Find relevant pages in selected documents (parallelized)
             step2_start = time.time()
-            print(f"⏱️ Step 2: Starting parallel page relevance detection...")
+
+            # Send status update for page selection
+            page_selection_status = {
+                "type": "status",
+                "step": "page_selection",
+                "message": "Locating relevant pages...",
+                "step_number": 2,
+                "total_steps": 3,
+            }
+            yield f"data: {json.dumps(page_selection_status)}\n\n"
+
+            print("⏱️ Step 2: Starting parallel page relevance detection...")
 
             # Create tasks for parallel processing of all documents
             doc_tasks = []
@@ -197,29 +236,47 @@ async def chat_stream(request: ChatRequest):
             print(f"✅ Step 2: Parallel page detection completed in {step2_time:.2f}s")
             print(f"📄 Total relevant pages found: {len(relevant_pages)}")
 
-            # Send metadata first
-            metadata = {
-                "type": "metadata",
-                "selected_documents": [doc["filename"] for doc in selected_docs],
+            # Send completion status for page selection
+            page_selection_complete = {
+                "type": "step_complete",
+                "step": "page_selection",
+                "message": f"Located {len(relevant_pages)} relevant pages",
                 "relevant_pages_count": len(relevant_pages),
-                "timing": {
-                    "document_selection": step1_time,
-                    "page_detection": step2_time,
-                },
-                "cost": total_cost,
+                "time_taken": step2_time,
+                "cost": step2_cost,
+                "step_number": 2,
             }
-            yield f"data: {json.dumps(metadata)}\n\n"
+            yield f"data: {json.dumps(page_selection_complete)}\n\n"
 
             # Step 3: Stream the answer generation
             step3_start = time.time()
-            print(f"⏱️ Step 3: Starting streaming answer generation...")
+            step3_cost = 0.0
+
+            # Send status update for answer generation
+            answer_generation_status = {
+                "type": "status",
+                "step": "answer_generation",
+                "message": "Generating answer...",
+                "step_number": 3,
+                "total_steps": 3,
+                "model": request.model,
+            }
+            yield f"data: {json.dumps(answer_generation_status)}\n\n"
+
+            print("⏱️ Step 3: Starting streaming answer generation...")
 
             async for chunk in llm_service.generate_answer_stream(
-                relevant_pages, request.question, request.chat_history
+                relevant_pages, request.question, request.chat_history, request.model
             ):
-                chunk_data = {"type": "content", "content": chunk}
-                yield f"data: {json.dumps(chunk_data)}\n\n"
 
+                if chunk["type"] == "content":
+                    chunk_data = {"type": "content", "content": chunk["content"]}
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                elif chunk["type"] == "cost":
+                    print(chunk)
+                    step3_cost += chunk["cost"]
+
+            total_cost += step3_cost
             step3_time = time.time() - step3_start
             total_time = time.time() - start_time
             print(
@@ -227,7 +284,14 @@ async def chat_stream(request: ChatRequest):
             )
             print(f"🏁 Streaming chat request completed in {total_time:.2f}s total")
             print(
-                f"📊 Timing breakdown: Doc Selection: {step1_time:.2f}s | Page Detection: {step2_time:.2f}s | Answer Gen: {step3_time:.2f}s"
+                f"📊 Timing breakdown: Doc Selection: {step1_time:.2f}s | "
+                f"Page Detection: {step2_time:.2f}s | "
+                f"Answer Gen: {step3_time:.2f}s"
+            )
+            print(
+                f"💰 Cost breakdown: Doc Selection: ${step1_cost:.4f} | "
+                f"Page Detection: ${step2_cost:.4f} | "
+                f"Answer Gen: ${step3_cost:.4f}"
             )
 
             # Update session cost
@@ -245,6 +309,12 @@ async def chat_stream(request: ChatRequest):
                     "document_selection": step1_time,
                     "page_detection": step2_time,
                     "answer_generation": step3_time,
+                },
+                "cost_breakdown": {
+                    "document_selection": step1_cost,
+                    "page_detection": step2_cost,
+                    "answer_generation": step3_cost,
+                    "total_cost": total_cost,
                 },
             }
             yield f"data: {json.dumps(final_metadata)}\n\n"

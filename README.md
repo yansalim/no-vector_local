@@ -18,7 +18,7 @@ The system follows a 3-step process for each question:
 ## Architecture
 
 - **Frontend**: Next.js with TypeScript and Tailwind CSS
-- **Backend**: Python FastAPI with OpenAI GPT-4
+- **Backend**: Python FastAPI with OpenAI GPT-5-mini
 - **PDF Processing**: PyPDF2 for text extraction
 - **No Vector Search**: Uses LLM-based relevance detection instead
 
@@ -139,7 +139,7 @@ graph TD
 - **FastAPI**: High-performance Python web framework
 - **Pydantic**: Data validation
 - **PyPDF2**: PDF text extraction
-- **OpenAI GPT-4**: Language model for document analysis
+- **OpenAI GPT-5-mini**: Language model for document analysis
 - **python-dotenv**: Environment variable management
 
 ## File Structure

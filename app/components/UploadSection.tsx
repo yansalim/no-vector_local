@@ -117,7 +117,7 @@ export default function UploadSection({
       {selectedFiles.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-medium text-gray-700 mb-2">
-            Selected Files ({selectedFiles.length}/10)
+            Selected Files ({selectedFiles.length}/100)
           </h3>
           <div className="space-y-2">
             {selectedFiles.map((file, index) => (

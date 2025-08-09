@@ -16,7 +16,7 @@ class LLMService:
             self.client = None
         else:
             self.client = AsyncOpenAI(api_key=api_key)
-        self.model = "gpt-4"
+        self.model = "gpt-5-mini"
 
         self.pricing = {
             "gpt-5": {"input": 1.25, "output": 10.0},
@@ -44,15 +44,18 @@ class LLMService:
         question: str,
         chat_history: List[Dict[str, Any]] = None,
     ) -> tuple[List[Dict[str, Any]], float]:
-        """Select relevant documents based on description, question, and chat history"""
+        """
+        Select relevant documents based on description, question, and chat history
+        """
 
         doc_summaries = []
         for doc in documents:
             doc_summaries.append(
                 {
+                    "id": doc["id"],
                     "filename": doc["filename"],
                     "total_pages": doc["total_pages"],
-                    "first_page_preview": doc["pages"][0]["text"][:500] + "...",
+                    "first_page_preview": (doc["pages"][0]["text"][:500] + "..."),
                 }
             )
 
@@ -60,7 +63,7 @@ class LLMService:
         history_context = ""
         if chat_history:
             history_context = "\n\nChat History:\n"
-            for msg in chat_history[-5:]:  # Include last 5 messages for context
+            for msg in chat_history:
                 if hasattr(msg, "role"):
                     role = msg.role
                     content = msg.content
@@ -70,34 +73,45 @@ class LLMService:
                 history_context += f"{role.capitalize()}: {content}\n"
 
         prompt = f"""
-            Based on the following document collection description, chat history, and current question, 
-            select which documents are most likely to contain the answer.
+            Based on the following document collection description, chat history, 
+            and current question, select which documents are most likely to 
+            contain the answer.
 
-            Document Collection Description: {description}
+            <Document Collection Description>
+            {description}
+            <Document Collection Description>
 
-            Available Documents:
+            <Available Documents>
             {json.dumps(doc_summaries, indent=2)}
-            {history_context}
-            Current Question: {question}
+            <Available Documents>
 
-            Return a JSON array of filenames that are most relevant to the current question and conversation context.
+            <Chat History>
+            {history_context}
+            <Chat History>
+
+            <Current Question>
+            {question}
+            <Current Question>
+
+            Return a JSON array of document IDs (numbers) that are most relevant to 
+            the current question and conversation context.
             Only return the JSON array, no other text.
-            Example: ["document1.pdf", "document2.pdf"]
+            Example: [1, 3, 5]
             """
 
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-5",
                 messages=[{"role": "user", "content": prompt}],
             )
 
-            selected_filenames = json.loads(response.choices[0].message.content)
-            cost = self.calculate_cost(response.usage, "gpt-5-mini")
+            selected_ids = json.loads(response.choices[0].message.content)
+            cost = self.calculate_cost(response.usage, self.model)
 
-            # Return full document objects for selected filenames
+            # Return full document objects for selected IDs
             selected_docs = []
             for doc in documents:
-                if doc["filename"] in selected_filenames:
+                if doc["id"] in selected_ids:
                     selected_docs.append(doc)
 
             return selected_docs, cost
@@ -170,11 +184,7 @@ class LLMService:
             pages_content.append(
                 {
                     "page_number": page["page_number"],
-                    "text": (
-                        page["text"][:1000] + "..."
-                        if len(page["text"]) > 1000
-                        else page["text"]
-                    ),
+                    "page_content": (page["text"]),
                 }
             )
 
@@ -215,12 +225,12 @@ class LLMService:
 
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-5-mini",
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
 
             relevant_page_numbers = json.loads(response.choices[0].message.content)
-            cost = self.calculate_cost(response.usage, model="gpt-5-mini")
+            cost = self.calculate_cost(response.usage, model=self.model)
 
             # Add full page data for relevant pages
             relevant_pages = []
@@ -251,11 +261,16 @@ class LLMService:
         relevant_pages: List[Dict[str, Any]],
         question: str,
         chat_history: List[Dict[str, Any]] = None,
+        model: str = "gpt-5-mini",
     ):
         """Generate final answer using all relevant pages with streaming"""
 
         if not relevant_pages:
-            yield "I couldn't find any relevant information to answer your question."
+            yield {
+                "type": "content",
+                "content": "I couldn't find any relevant information to answer your question.",
+            }
+            yield {"type": "cost", "cost": 0.0}
             return
 
         # Prepare content from all relevant pages
@@ -271,7 +286,7 @@ class LLMService:
         history_context = ""
         if chat_history:
             history_context = "\n\nConversation History:\n"
-            for msg in chat_history[-4:]:  # Include last 4 messages for context
+            for msg in chat_history:  # Include last 4 messages for context
                 if hasattr(msg, "role"):
                     role = msg.role
                     content = msg.content
@@ -306,14 +321,25 @@ class LLMService:
 
         try:
             stream = await self.client.chat.completions.create(
-                model="gpt-5-mini",
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
             async for chunk in stream:
-                if chunk.choices[0].delta.content is not None:
-                    yield chunk.choices[0].delta.content
+                if chunk.usage:
+                    yield {
+                        "type": "cost",
+                        "cost": self.calculate_cost(chunk.usage, model=model),
+                    }
+                if len(chunk.choices) > 0:
+                    if chunk.choices[0].delta.content is not None:
+                        yield {
+                            "type": "content",
+                            "content": chunk.choices[0].delta.content,
+                        }
 
         except Exception as e:
-            yield f"Error generating answer: {str(e)}"
+            yield {"type": "content", "content": f"Error generating answer: {str(e)}"}
+            yield {"type": "cost", "cost": 0.0}
