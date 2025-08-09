@@ -28,6 +28,16 @@ class UploadResponse(BaseModel):
     message: str
 
 
+class UpdateDescriptionRequest(BaseModel):
+    description: str
+
+
+class AddDocumentsResponse(BaseModel):
+    session_id: str
+    message: str
+    new_documents_count: int
+
+
 class SessionData(BaseModel):
     session_id: str
     description: str

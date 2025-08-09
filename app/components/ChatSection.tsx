@@ -77,7 +77,14 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
   const [selectedModel, setSelectedModel] = useState<string>('gpt-5-mini');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [selectedNewFiles, setSelectedNewFiles] = useState<File[]>([]);
+  const [showUploadSection, setShowUploadSection] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Import PDF.js worker setup only on client side
   useEffect(() => {
@@ -390,26 +397,287 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
     return pages;
   };
 
+  const handleEditDescription = () => {
+    setEditedDescription(sessionInfo?.description || '');
+    setIsEditingDescription(true);
+  };
+
+  const handleSaveDescription = async () => {
+    if (!editedDescription.trim()) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/session/${sessionId}/description`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description: editedDescription
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update description');
+      }
+
+      // Update local session info
+      setSessionInfo((prev: any) => ({
+        ...prev,
+        description: editedDescription
+      }));
+      
+      setIsEditingDescription(false);
+    } catch (error) {
+      console.error('Error updating description:', error);
+      // You could add error state here if needed
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingDescription(false);
+    setEditedDescription('');
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    
+    if (files.length > 100) {
+      setUploadError('Maximum 100 files allowed');
+      return;
+    }
+
+    // Validate file types
+    const invalidFiles = files.filter(file => !file.name.endsWith('.pdf'));
+    if (invalidFiles.length > 0) {
+      setUploadError('Only PDF files are allowed');
+      return;
+    }
+
+    // Check if adding these files would exceed total limit
+    const currentCount = sessionInfo?.documents?.length || 0;
+    if (currentCount + files.length > 100) {
+      setUploadError(`Adding ${files.length} files would exceed the 100 document limit. Current: ${currentCount}`);
+      return;
+    }
+
+    // Check for duplicate filenames
+    const existingFilenames = sessionInfo?.documents?.map((doc: any) => doc.filename) || [];
+    const duplicateFiles = files.filter(file => existingFilenames.includes(file.name));
+    if (duplicateFiles.length > 0) {
+      setUploadError(`Files already exist: ${duplicateFiles.map(f => f.name).join(', ')}`);
+      return;
+    }
+
+    setSelectedNewFiles(files);
+    setUploadError('');
+  };
+
+  const removeNewFile = (index: number) => {
+    setSelectedNewFiles(files => files.filter((_, i) => i !== index));
+  };
+
+  const handleUploadNewFiles = async () => {
+    if (selectedNewFiles.length === 0) {
+      setUploadError('Please select at least one PDF file');
+      return;
+    }
+
+    setIsUploadingFiles(true);
+    setUploadError('');
+
+    try {
+      const formData = new FormData();
+      selectedNewFiles.forEach(file => {
+        formData.append('files', file);
+      });
+
+      const response = await fetch(`http://localhost:8000/session/${sessionId}/documents`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Upload failed');
+      }
+
+      const result = await response.json();
+      
+      // Refresh session info to get updated document list
+      await fetchSessionInfo();
+      
+      // Clear upload state
+      setSelectedNewFiles([]);
+      setShowUploadSection(false);
+      
+      // You could show a success message here
+      console.log(`Successfully uploaded ${result.new_documents_count} documents`);
+      
+    } catch (err: any) {
+      setUploadError(err.message || 'Upload failed. Please try again.');
+      console.error('Upload error:', err);
+    } finally {
+      setIsUploadingFiles(false);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    setSelectedNewFiles([]);
+    setShowUploadSection(false);
+    setUploadError('');
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-lg h-screen flex flex-col">
+    <div className="bg-white rounded-lg shadow-lg flex flex-col h-full">
       {/* Header */}
       <div className="border-b border-gray-200 p-4">
         <div className="flex justify-between items-center mb-3">
-          <div>
+          <div className="flex-1">
             <h2 className="text-xl font-semibold text-gray-800">Chat with your documents</h2>
             {sessionInfo && (
-              <p className="text-sm text-gray-600">
-                {sessionInfo.documents.length} document(s) • {sessionInfo.description}
-              </p>
+              <div className="flex items-center space-x-2 mt-1">
+                <p className="text-sm text-gray-600">
+                  {sessionInfo.documents.length} document(s) •
+                </p>
+                {isEditingDescription ? (
+                  <div className="flex items-center space-x-2 flex-1">
+                    <input
+                      type="text"
+                      value={editedDescription}
+                      onChange={(e) => setEditedDescription(e.target.value)}
+                      className="text-sm text-gray-600 border border-gray-300 rounded px-2 py-1 flex-1"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveDescription();
+                        } else if (e.key === 'Escape') {
+                          handleCancelEdit();
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSaveDescription}
+                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <p className="text-sm text-gray-600">{sessionInfo.description}</p>
+                    <button
+                      onClick={handleEditDescription}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                      title="Edit description"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <button
-            onClick={onReset}
-            className="text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400"
-          >
-            Upload New Documents
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setShowUploadSection(!showUploadSection)}
+              className="text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400 text-sm"
+            >
+              Add Files
+            </button>
+            <button
+              onClick={onReset}
+              className="text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400"
+            >
+              Start new session
+            </button>
+          </div>
         </div>
+
+        {/* Upload Section */}
+        {showUploadSection && (
+          <div className="bg-gray-50 rounded-lg p-4 mb-3">
+            <h3 className="text-lg font-medium text-gray-800 mb-3">Add New Documents</h3>
+            
+            {/* File Upload Area */}
+            <div className="mb-4">
+              <div 
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <div className="text-gray-600">
+                  <svg className="mx-auto h-8 w-8 text-gray-400 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <p className="text-sm">Click to select PDF files or drag and drop</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Selected Files */}
+            {selectedNewFiles.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Selected Files ({selectedNewFiles.length})
+                </h4>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {selectedNewFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
+                      <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                      <button
+                        onClick={() => removeNewFile(index)}
+                        className="text-red-500 hover:text-red-700 flex-shrink-0 ml-2"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {uploadError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-red-600 text-sm">{uploadError}</p>
+              </div>
+            )}
+
+            {/* Upload Buttons */}
+            <div className="flex space-x-2">
+              <button
+                onClick={handleUploadNewFiles}
+                disabled={isUploadingFiles || selectedNewFiles.length === 0}
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+              >
+                {isUploadingFiles ? 'Uploading...' : `Upload ${selectedNewFiles.length} file(s)`}
+              </button>
+              <button
+                onClick={handleCancelUpload}
+                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* Document List */}
         {sessionInfo && sessionInfo.documents.length > 0 && (
@@ -697,7 +965,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             <div className="flex-1 overflow-auto p-4 flex justify-center">
               <div className="max-w-full">
                 <Document
-                  file={`http://localhost:8000/pdf/${selectedPage.sessionId}/${selectedPage.filename}`}
+                  file={`http://localhost:8000/pdf/${selectedPage.sessionId}/${encodeURIComponent(selectedPage.filename)}`}
                   onLoadSuccess={() => setPdfError(null)}
                   onLoadError={(error) => {
                     console.error('PDF load error:', error);

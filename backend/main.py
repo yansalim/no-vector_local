@@ -8,9 +8,14 @@ import uuid
 from datetime import datetime
 import shutil
 from pathlib import Path
-import os
 
-from models import ChatRequest, UploadResponse, SessionData
+from models import (
+    ChatRequest,
+    UploadResponse,
+    SessionData,
+    UpdateDescriptionRequest,
+    AddDocumentsResponse,
+)
 from pdf_processor import PDFProcessor
 from llm_service import LLMService
 
@@ -352,29 +357,143 @@ async def get_session(session_id: str):
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-
 @app.get("/pdf/{session_id}/{filename}")
-async def serve_pdf(session_id: str, filename: str):
+async def get_pdf(session_id: str, filename: str):
     """Serve PDF files for viewing"""
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Construct file path
-    file_path = os.path.join("uploads", session_id, filename)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="PDF file not found")
+    file_path = UPLOAD_DIR / session_id / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(
-        file_path,
+        path=str(file_path),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"inline; filename={filename}"},
+        headers={
+            "Content-Disposition": f"inline; filename={filename}",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
+
+
+@app.put("/session/{session_id}/description")
+async def update_session_description(
+    session_id: str, request: UpdateDescriptionRequest
+):
+    """Update session description"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Update in-memory session
+    sessions[session_id].description = request.description
+
+    # Update session file on disk
+    session_file = SESSION_DIR / f"{session_id}.json"
+    if session_file.exists():
+        session_dict = sessions[session_id].model_dump()
+        session_dict["created_at"] = session_dict["created_at"].isoformat()
+        with open(session_file, "w") as f:
+            json.dump(session_dict, f)
+
+    return {
+        "message": "Description updated successfully",
+        "description": request.description,
+    }
+
+
+@app.post("/session/{session_id}/documents", response_model=AddDocumentsResponse)
+async def add_documents_to_session(
+    session_id: str, files: List[UploadFile] = File(...)
+):
+    """Add documents to an existing session"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if len(files) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 documents allowed")
+
+    # Validate file types
+    for file in files:
+        if not file.filename.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    session_data = sessions[session_id]
+    session_dir = UPLOAD_DIR / session_id
+
+    # Check if adding these files would exceed 100 total documents
+    current_doc_count = len(session_data.documents)
+    if current_doc_count + len(files) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Adding {len(files)} documents would exceed the "
+                f"100 document limit. Current: {current_doc_count}"
+            ),
+        )
+
+    # Process new files
+    new_documents = []
+    next_id = (
+        max([doc["id"] for doc in session_data.documents]) + 1
+        if session_data.documents
+        else 1
+    )
+
+    for i, file in enumerate(files):
+        # Check if file already exists
+        existing_file = any(
+            doc["filename"] == file.filename for doc in session_data.documents
+        )
+        if existing_file:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {file.filename} already exists in this session",
+            )
+
+        file_path = session_dir / file.filename
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Extract text from PDF
+        try:
+            pages = pdf_processor.extract_pages(str(file_path))
+            new_documents.append(
+                {
+                    "id": next_id + i,
+                    "filename": file.filename,
+                    "path": str(file_path),
+                    "pages": pages,
+                    "total_pages": len(pages),
+                }
+            )
+        except Exception as e:
+            print(f"PDF processing error for {file.filename}: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error processing {file.filename}: {str(e)}"
+            )
+
+    # Add new documents to session
+    session_data.documents.extend(new_documents)
+
+    # Update session file on disk
+    session_file = SESSION_DIR / f"{session_id}.json"
+    session_dict = session_data.model_dump()
+    session_dict["created_at"] = session_dict["created_at"].isoformat()
+    with open(session_file, "w") as f:
+        json.dump(session_dict, f)
+
+    return AddDocumentsResponse(
+        session_id=session_id,
+        message=f"Successfully added {len(new_documents)} documents",
+        new_documents_count=len(new_documents),
+    )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
