@@ -47,8 +47,10 @@ The system follows a 3-step process for each question:
    # For local development
    NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
    
-   # For production, update to your actual backend URL:
-   # NEXT_PUBLIC_API_BASE_URL=https://your-api-domain.com
+   # For production, update to your actual BACKEND API URL:
+   # NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.railway.app
+   # NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.herokuapp.com
+   # NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
    ```
 
 4. **Set up the backend**:
@@ -191,7 +193,12 @@ For production deployment, make sure to set the following environment variables:
 
 **Frontend (.env.local or build environment):**
 ```bash
-NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com
+# Set this to your BACKEND API URL, not your frontend URL
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.railway.app
+# OR
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-app.herokuapp.com
+# OR
+NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
 ```
 
 **Backend (environment variables):**
@@ -201,7 +208,29 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ### Deployment Steps
 
-1. **Frontend (Vercel/Netlify/etc.):**
+#### **Option 1: Single Vercel Project with API Routes (Recommended)**
+
+1. **Deploy to Vercel:**
+   - The project is already configured with `vercel.json` to handle both frontend and backend
+   - Set `OPENAI_API_KEY` environment variable in Vercel dashboard
+   - Deploy the entire project to Vercel
+   - No need to set `NEXT_PUBLIC_API_BASE_URL` - it will automatically use `/api`
+
+#### **Option 2: Separate Vercel Projects**
+
+1. **Deploy Backend to Vercel:**
+   - Create a new Vercel project for your backend folder only
+   - Use the `backend/vercel.json` configuration
+   - Set `OPENAI_API_KEY` environment variable in Vercel dashboard
+   - Deploy the backend folder
+
+2. **Deploy Frontend to Vercel:**
+   - Set `NEXT_PUBLIC_API_BASE_URL=https://your-backend-project.vercel.app`
+   - Deploy the root project
+
+#### **Option 2: Other Platforms**
+
+1. **Frontend (Vercel/Netlify):**
    - Set `NEXT_PUBLIC_API_BASE_URL` to your backend URL
    - Build and deploy: `npm run build`
 
