@@ -41,7 +41,17 @@ The system follows a 3-step process for each question:
    npm install
    ```
 
-3. **Set up the backend**:
+3. **Configure environment variables**:
+   Create a `.env.local` file in the root directory:
+   ```bash
+   # For local development
+   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+   
+   # For production, update to your actual backend URL:
+   # NEXT_PUBLIC_API_BASE_URL=https://your-api-domain.com
+   ```
+
+4. **Set up the backend**:
    ```bash
    cd backend
    python3 -m venv venv
@@ -173,13 +183,46 @@ vectorless-chatbot/
 - Sessions are stored in memory (consider database for production)
 - Files are stored locally in the uploads directory
 
+## Production Deployment
+
+### Environment Configuration
+
+For production deployment, make sure to set the following environment variables:
+
+**Frontend (.env.local or build environment):**
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com
+```
+
+**Backend (environment variables):**
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+### Deployment Steps
+
+1. **Frontend (Vercel/Netlify/etc.):**
+   - Set `NEXT_PUBLIC_API_BASE_URL` to your backend URL
+   - Build and deploy: `npm run build`
+
+2. **Backend (Railway/Heroku/AWS/etc.):**
+   - Set `OPENAI_API_KEY` environment variable
+   - Install dependencies: `pip install -r requirements.txt`
+   - Start server: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+
+### Important Notes
+- Update CORS origins in `backend/main.py` to include your production frontend URL
+- Consider using a database instead of in-memory storage for sessions
+- Set up proper file storage (S3, etc.) instead of local uploads directory
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Upload failed"**: Check that the backend is running on port 8000
+1. **"Upload failed"**: Check that the backend is running and CORS is configured
 2. **"Error generating answer"**: Verify your OpenAI API key is set correctly
-3. **Component import errors**: Ensure all TypeScript files are saved
+3. **"Failed to load PDF"**: Check that `NEXT_PUBLIC_API_BASE_URL` is set correctly
+4. **Component import errors**: Ensure all TypeScript files are saved
 
 ### Backend Logs
 Check the backend terminal for detailed error messages and processing logs.

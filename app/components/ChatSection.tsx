@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import dynamic from 'next/dynamic';
+import config from '../../config';
 
 // Dynamically import react-pdf components to avoid SSR issues
 const Document = dynamic(
@@ -110,7 +111,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
 
   const fetchSessionInfo = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/session/${sessionId}`);
+      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}`);
       if (response.ok) {
         const info = await response.json();
         setSessionInfo(info);
@@ -159,7 +160,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
     setMessages(prev => [...prev, assistantMessage]);
 
     try {
-      const response = await fetch('http://localhost:8000/chat/stream', {
+      const response = await fetch(`${config.apiBaseUrl}/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -408,7 +409,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/session/${sessionId}/description`, {
+      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}/description`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -493,7 +494,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
         formData.append('files', file);
       });
 
-      const response = await fetch(`http://localhost:8000/session/${sessionId}/documents`, {
+      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}/documents`, {
         method: 'POST',
         body: formData,
       });
@@ -965,7 +966,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             <div className="flex-1 overflow-auto p-4 flex justify-center">
               <div className="max-w-full">
                 <Document
-                  file={`http://localhost:8000/pdf/${selectedPage.sessionId}/${encodeURIComponent(selectedPage.filename)}`}
+                  file={`${config.apiBaseUrl}/pdf/${selectedPage.sessionId}/${encodeURIComponent(selectedPage.filename)}`}
                   onLoadSuccess={() => setPdfError(null)}
                   onLoadError={(error) => {
                     console.error('PDF load error:', error);

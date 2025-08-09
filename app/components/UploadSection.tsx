@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import config from '../../config';
 
 interface UploadSectionProps {
   onUploadSuccess: (sessionId: string) => void;
@@ -62,7 +63,7 @@ export default function UploadSection({
       });
       formData.append('description', description);
 
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(`${config.apiBaseUrl}/upload`, {
         method: 'POST',
         body: formData,
       });
