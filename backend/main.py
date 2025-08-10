@@ -44,7 +44,7 @@ pdf_processor = PDFProcessor()
 llm_service = LLMService()
 
 # Storage directories - use /tmp for serverless environments
-if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+if os.environ.get("VERCEL"):
     # Use temp directory for serverless environments
     UPLOAD_DIR = Path(tempfile.gettempdir()) / "uploads"
     SESSION_DIR = Path(tempfile.gettempdir()) / "sessions"
