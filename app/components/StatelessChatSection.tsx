@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Send, Upload, X, FileText, Eye, EyeOff, Settings, Plus, Trash2, Edit2, Check, RotateCcw } from 'lucide-react';
 import config from '../../config';
+import ChunkedUploader from '../utils/chunkedUpload';
 
 interface Message {
   id: string;
@@ -72,6 +74,14 @@ export default function StatelessChatSection({
   const [selectedNewFiles, setSelectedNewFiles] = useState<File[]>([]);
   const [showUploadSection, setShowUploadSection] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{
+    percentComplete: number;
+    processedFiles: number;
+    totalFiles: number;
+    currentChunk: number;
+    totalChunks: number;
+    isChunked: boolean;
+  } | null>(null);
   const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
   const [selectedPageContent, setSelectedPageContent] = useState<{
     content: string;
@@ -326,36 +336,38 @@ export default function StatelessChatSection({
 
     setIsUploadingFiles(true);
     setUploadError('');
+    setUploadProgress(null);
 
     try {
-      const formData = new FormData();
-      selectedNewFiles.forEach(file => {
-        formData.append('files', file);
+      // Check if chunking will be needed
+      const needsChunking = ChunkedUploader.needsChunking(selectedNewFiles);
+      
+      // Use the new ChunkedUploader
+      const result = await ChunkedUploader.upload({
+        endpoint: `${config.apiBaseUrl}/upload`,
+        files: selectedNewFiles,
+        description: description,
+        onProgress: (progress) => {
+          setUploadProgress({
+            ...progress,
+            isChunked: needsChunking
+          });
+          console.log(`Upload progress: ${progress.percentComplete}% (${progress.processedFiles}/${progress.totalFiles} files, chunk ${progress.currentChunk}/${progress.totalChunks})`);
+        },
+        onChunkComplete: (chunkIndex, totalChunks) => {
+          console.log(`Completed chunk ${chunkIndex + 1} of ${totalChunks}`);
+        }
       });
-      formData.append('description', description);
 
-      const response = await fetch(`${config.apiBaseUrl}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Upload failed');
+      if (!result.success) {
+        throw new Error(result.error || 'Upload failed');
       }
 
-      const result = await response.json();
       console.log('Upload response:', result);
       
-      // Check if this is an old session-based response
-      if (result.session_id && !result.documents) {
-        console.error('Received old session-based response. Backend might be using old code:', result);
-        throw new Error('Backend returned session-based response. Please check if backend is up to date.');
-      }
-      
       // Validate the response format
-      if (!result || !result.documents || !Array.isArray(result.documents)) {
-        console.error('Invalid response format. Expected {documents: [...], message: string}, got:', result);
+      if (!result.documents || !Array.isArray(result.documents)) {
+        console.error('Invalid response format. Expected documents array, got:', result);
         throw new Error(`Invalid response format from server. Expected documents array, got: ${JSON.stringify(result, null, 2)}`);
       }
       
@@ -374,11 +386,19 @@ export default function StatelessChatSection({
       setSelectedNewFiles([]);
       setShowUploadSection(false);
       
-    } catch (err: any) {
-      setUploadError(err.message || 'Upload failed. Please try again.');
-      console.error('Upload error:', err);
+      // Show success message with chunking info
+      const uploadMessage = result.chunked 
+        ? `Successfully uploaded ${result.totalFiles} files using ${ChunkedUploader.estimateChunks(selectedNewFiles)} chunks`
+        : `Successfully uploaded ${result.totalFiles} files`;
+      
+      console.log(uploadMessage);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadError(error instanceof Error ? error.message : 'Upload failed');
     } finally {
       setIsUploadingFiles(false);
+      setUploadProgress(null);
     }
   };
 
