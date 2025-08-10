@@ -102,9 +102,12 @@ export default function Home() {
             href="https://github.com/roe-ai/vectorless-chatbot"
             target="_blank"
             rel="noopener noreferrer"
-            className="absolute top-0 right-0 text-gray-600 hover:text-gray-900 transition-colors"
-            title="View source code on GitHub"
+            className="absolute top-0 right-0 text-gray-600 hover:text-gray-900 transition-colors flex items-center space-x-2 group"
+            title="Star us on GitHub"
           >
+            <span className="text-sm font-medium group-hover:text-gray-900 transition-colors">
+              Star us
+            </span>
             <GitHubIcon className="w-8 h-8" />
           </a>
           
