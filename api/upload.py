@@ -1,107 +1,147 @@
-from http.server import BaseHTTPRequestHandler
+import sys
+import os
 import json
-import uuid
 import tempfile
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, Any
+from http.server import BaseHTTPRequestHandler
 
+# from urllib.parse import parse_qs  # Not used
+import cgi
 
-def get_storage_dirs():
-    """Get storage directories for serverless environment"""
-    upload_dir = Path(tempfile.gettempdir()) / "uploads"
-    session_dir = Path(tempfile.gettempdir()) / "sessions"
-    upload_dir.mkdir(exist_ok=True)
-    session_dir.mkdir(exist_ok=True)
-    return upload_dir, session_dir
+# Add the backend directory to the Python path before importing
+backend_path = os.path.join(os.path.dirname(__file__), "..", "backend")
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
 
-
-def save_session(session_id: str, session_data: Dict[str, Any]):
-    """Save session to disk"""
-    _, session_dir = get_storage_dirs()
-    session_file = session_dir / f"{session_id}.json"
-    session_dict = session_data.copy()
-    if "created_at" in session_dict and isinstance(
-        session_dict["created_at"], datetime
-    ):
-        session_dict["created_at"] = session_dict["created_at"].isoformat()
-    print(session_file)
-    with open(session_file, "w") as f:
-        json.dump(session_dict, f)
-
-    # Load the saved file back and print it to check validity
-    with open(session_file, "r") as f:
-        loaded_data = json.load(f)
-        print(f"Loaded session data for validation: {loaded_data}")
-    print(f"Session saved: {session_id}")
-
-
-def send_json_response(handler, data: Dict[str, Any], status_code: int = 200):
-    """Send JSON response with proper headers"""
-    handler.send_response(status_code)
-    handler.send_header("Content-type", "application/json")
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header(
-        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-    )
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
-    handler.end_headers()
-
-    response_json = json.dumps(data)
-    handler.wfile.write(response_json.encode("utf-8"))
-
-
-def send_error_response(handler, message: str, status_code: int = 500):
-    """Send error response"""
-    error_data = {"error": message, "status_code": status_code}
-    send_json_response(handler, error_data, status_code)
-
-
-def handle_cors_preflight(handler):
-    """Handle CORS preflight requests"""
-    handler.send_response(200)
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header(
-        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-    )
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
-    handler.end_headers()
+from models import UploadResponse, DocumentData, DocumentPage
+from pdf_processor import PDFProcessor
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            # Create new session
-            session_id = str(uuid.uuid4())
+            # Initialize PDF processor
+            pdf_processor = PDFProcessor()
 
-            # Create session data (placeholder for now)
-            session_data = {
-                "session_id": session_id,
-                "description": "Uploaded documents",
-                "documents": [],  # TODO: Process actual uploaded files
-                "created_at": datetime.now(),
-                "total_session_cost": 0.0,
-            }
+            # Set CORS headers
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
 
-            # Save session to disk
-            save_session(session_id, session_data)
+            # Parse multipart form data
+            content_type = self.headers["content-type"]
+            if not content_type.startswith("multipart/form-data"):
+                self.wfile.write(
+                    json.dumps(
+                        {"error": "Content-Type must be multipart/form-data"}
+                    ).encode()
+                )
+                return
 
-            # Create session directory for files
-            upload_dir, _ = get_storage_dirs()
-            session_upload_dir = upload_dir / session_id
-            session_upload_dir.mkdir(exist_ok=True)
+            # Parse the form data
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": self.headers["content-type"],
+                },
+            )
 
-            response = {
-                "message": "Session created successfully",
-                "session_id": session_id,
-                "note": "File processing not yet fully implemented",
-            }
+            # Get description from form
+            description = form.getvalue("description", "")
 
-            send_json_response(self, response)
+            # Get uploaded files
+            files = []
+            if "files" in form:
+                if isinstance(form["files"], list):
+                    files = form["files"]
+                else:
+                    files = [form["files"]]
+
+            if len(files) > 100:
+                self.wfile.write(
+                    json.dumps({"error": "Maximum 100 documents allowed"}).encode()
+                )
+                return
+
+            # Process files and extract text
+            documents = []
+            for i, file_item in enumerate(files):
+                if not hasattr(file_item, "filename") or not file_item.filename:
+                    continue
+
+                if not file_item.filename.endswith(".pdf"):
+                    self.wfile.write(
+                        json.dumps({"error": "Only PDF files are allowed"}).encode()
+                    )
+                    return
+
+                # Create temporary file for processing
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".pdf"
+                ) as temp_file:
+                    temp_file.write(file_item.file.read())
+                    temp_file_path = temp_file.name
+
+                try:
+                    # Extract text from PDF
+                    pages_data = pdf_processor.extract_pages(temp_file_path)
+
+                    # Convert to DocumentPage objects
+                    pages = [
+                        DocumentPage(page_number=page["page_number"], text=page["text"])
+                        for page in pages_data
+                    ]
+
+                    documents.append(
+                        DocumentData(
+                            id=i + 1,
+                            filename=file_item.filename,
+                            pages=pages,
+                            total_pages=len(pages),
+                        )
+                    )
+                except Exception as e:
+                    print(f"PDF processing error for {file_item.filename}: {str(e)}")
+                    self.wfile.write(
+                        json.dumps(
+                            {
+                                "error": f"Error processing {file_item.filename}: {str(e)}"
+                            }
+                        ).encode()
+                    )
+                    return
+                finally:
+                    # Clean up temporary file
+                    try:
+                        os.unlink(temp_file_path)
+                    except OSError:
+                        pass
+
+            # Create response
+            response = UploadResponse(
+                documents=documents,
+                message=f"Successfully processed {len(files)} documents",
+            )
+
+            # Send response
+            self.wfile.write(response.model_dump_json().encode())
 
         except Exception as e:
-            print(f"Error in upload endpoint: {e}")
-            send_error_response(self, f"Upload failed: {str(e)}")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps({"error": f"Internal server error: {str(e)}"}).encode()
+            )
 
     def do_OPTIONS(self):
-        handle_cors_preflight(self)
+        # Handle CORS preflight
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()

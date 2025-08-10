@@ -1,19 +1,27 @@
-# Vectorless PDF Chatbot
+# Stateless PDF Chatbot
 
-A sophisticated chatbot application that allows users to upload PDF documents and ask questions about their content. The system uses a multi-stage approach without vector search or cosine similarity.
+A sophisticated chatbot application that allows users to upload PDF documents and ask questions about their content. The system is completely stateless - all document data is stored in the user's browser, making it perfect for serverless deployments.
 
 ## Features
 
-### Setup Stage
-- **Document Upload**: Upload up to 10 PDF documents
-- **Collection Description**: Provide a description of what the documents are about
+### Stateless Architecture
+- **No Server Storage**: Documents are processed and stored entirely in the browser
+- **Serverless-Friendly**: Zero file system dependencies, perfect for Vercel/Netlify
+- **Privacy-First**: Your documents never leave your device after processing
+- **LocalStorage Persistence**: Documents persist across browser sessions
 
-### Chat Stage
+### Document Processing
+- **Upload up to 100 PDF documents**
+- **Instant text extraction** and processing
+- **Editable collection descriptions**
+- **Add/remove documents** without losing chat history
+
+### Chat Experience
 The system follows a 3-step process for each question:
 
-1. **Document Selection**: LLM selects relevant documents based on the collection description and question
-2. **Page Relevance**: For each selected document, processes 20 pages at a time to identify relevant pages
-3. **Answer Generation**: Uses all relevant pages to generate a comprehensive answer
+1. **Document Selection**: LLM selects relevant documents based on description and question
+2. **Page Relevance**: Identifies the most relevant pages from selected documents
+3. **Answer Generation**: Uses relevant pages to generate comprehensive answers with citations
 
 ## Architecture
 
@@ -255,10 +263,11 @@ OPENAI_API_KEY=your_openai_api_key_here
    - Start server: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 ### Important Notes
-- **File Storage**: Vercel uses temporary storage (`/tmp`) - files are deleted between function calls
-- **Sessions**: Currently stored in memory and temporary files - consider using a database for production
+- **Stateless Design**: No server-side storage required - perfect for serverless environments
+- **Browser Storage**: Documents stored in localStorage (typically 5-10MB limit per origin)
+- **Privacy**: Document content never persists on the server after processing
+- **Scalability**: Horizontally scalable due to stateless architecture
 - **CORS**: Update CORS origins in `backend/main.py` to include your production frontend URL
-- **Scalability**: For heavy usage, consider dedicated file storage (S3, etc.) and database
 
 ## Troubleshooting
 

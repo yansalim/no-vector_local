@@ -2,34 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import dynamic from 'next/dynamic';
 import config from '../../config';
-
-// Dynamically import react-pdf components to avoid SSR issues
-const Document = dynamic(
-  () => import('react-pdf').then((mod) => mod.Document),
-  { 
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading PDF viewer...</span>
-      </div>
-    )
-  }
-);
-
-const Page = dynamic(
-  () => import('react-pdf').then((mod) => mod.Page),
-  { 
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-);
 
 interface Message {
   id: string;
@@ -63,20 +36,35 @@ interface Message {
   };
 }
 
-interface ChatSectionProps {
-  sessionId: string;
-  onReset: () => void;
+interface DocumentData {
+  id: number;
+  filename: string;
+  pages: Array<{
+    page_number: number;
+    text: string;
+  }>;
+  total_pages: number;
 }
 
-export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
+interface StatelessChatSectionProps {
+  documents: DocumentData[];
+  description: string;
+  onReset: () => void;
+  onUpdateDocuments: (documents: DocumentData[]) => void;
+  onUpdateDescription: (description: string) => void;
+}
+
+export default function StatelessChatSection({ 
+  documents, 
+  description, 
+  onReset, 
+  onUpdateDocuments, 
+  onUpdateDescription 
+}: StatelessChatSectionProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [showDocuments, setShowDocuments] = useState(true);
-  const [selectedPage, setSelectedPage] = useState<{content: string, pageNumber: number, filename: string, sessionId: string} | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
   const [selectedModel, setSelectedModel] = useState<string>('gpt-5-mini');
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState('');
@@ -84,17 +72,14 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   const [selectedNewFiles, setSelectedNewFiles] = useState<File[]>([]);
   const [showUploadSection, setShowUploadSection] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [totalSessionCost, setTotalSessionCost] = useState<number>(0);
+  const [selectedPageContent, setSelectedPageContent] = useState<{
+    content: string;
+    pageNumber: number;
+    filename: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Import PDF.js worker setup only on client side
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      import('react-pdf').then((pdfjs) => {
-        pdfjs.pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.pdfjs.version}/build/pdf.worker.min.mjs`;
-      });
-    }
-  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -103,25 +88,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  useEffect(() => {
-    // Fetch session info
-    fetchSessionInfo();
-  }, [sessionId]);
-
-  const fetchSessionInfo = async () => {
-    try {
-      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}`);
-      if (response.ok) {
-        const info = await response.json();
-        setSessionInfo(info);
-
-        setTotalSessionCost(info.total_session_cost || 0);
-      }
-    } catch (error) {
-      console.error('Error fetching session info:', error);
-    }
-  };
 
   const handleSendMessage = async () => {
     if (!currentQuestion.trim() || isLoading) return;
@@ -166,8 +132,9 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          session_id: sessionId,
           question: question,
+          documents: documents,
+          description: description,
           model: selectedModel,
           chat_history: messages.map(msg => ({
             role: msg.role,
@@ -204,7 +171,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               const data = JSON.parse(line.slice(6));
               
               if (data.type === 'status') {
-                // Update progress status in the message
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessageId 
                     ? {
@@ -218,7 +184,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                     : msg
                 ));
               } else if (data.type === 'step_complete') {
-                // Step completed - update progress and metadata
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessageId 
                     ? {
@@ -241,20 +206,15 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                     : msg
                 ));
               } else if (data.type === 'content') {
-                // Append content
                 accumulatedContent += data.content;
-                
-                // Track page markers during streaming
-                
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessageId 
                     ? { ...msg, content: accumulatedContent }
                     : msg
                 ));
               } else if (data.type === 'complete') {
-                // Streaming complete - update session cost and final metadata
-                if (data.session_cost !== undefined) {
-                  setTotalSessionCost(data.session_cost);
+                if (data.cost_breakdown?.total_cost) {
+                  setTotalSessionCost(prev => prev + data.cost_breakdown.total_cost);
                 }
                 
                 setMessages(prev => prev.map(msg => 
@@ -305,42 +265,140 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
     }
   };
 
-  const handlePageReference = (filename: string, pageNumber: number) => {
-    if (!sessionInfo) {
-      console.error('No session info available');
-      return;
-    }
-    
+  const handleEditDescription = () => {
+    setEditedDescription(description);
+    setIsEditingDescription(true);
+  };
 
-    
-    // Find the document and page
-    const document = sessionInfo.documents.find((doc: any) => doc.filename === filename);
-    if (!document) {
-      console.error('Document not found:', filename);
+  const handleSaveDescription = () => {
+    if (!editedDescription.trim()) {
       return;
     }
-    
+    onUpdateDescription(editedDescription);
+    setIsEditingDescription(false);
+  };
 
-    
-    if (!document.pages || !Array.isArray(document.pages)) {
-      console.error('Document pages not available or not an array:', document.pages);
-      return;
-    }
-    
-    const page = document.pages.find((p: any) => p.page_number === pageNumber);
-    if (!page) {
-      console.error('Page not found:', pageNumber, 'Available pages:', document.pages.map((p: any) => p.page_number));
-      return;
-    }
-    
+  const handleCancelEdit = () => {
+    setIsEditingDescription(false);
+    setEditedDescription('');
+  };
 
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
     
-    setSelectedPage({
-      content: page.text,
-      pageNumber: pageNumber,
-      filename: filename,
-      sessionId: sessionId
-    });
+    if (files.length > 100) {
+      setUploadError('Maximum 100 files allowed');
+      return;
+    }
+
+    const invalidFiles = files.filter(file => !file.name.endsWith('.pdf'));
+    if (invalidFiles.length > 0) {
+      setUploadError('Only PDF files are allowed');
+      return;
+    }
+
+    const currentCount = documents.length;
+    if (currentCount + files.length > 100) {
+      setUploadError(`Adding ${files.length} files would exceed the 100 document limit. Current: ${currentCount}`);
+      return;
+    }
+
+    const existingFilenames = documents?.map(doc => doc?.filename).filter(Boolean) || [];
+    const duplicateFiles = files.filter(file => existingFilenames.includes(file.name));
+    if (duplicateFiles.length > 0) {
+      setUploadError(`Files already exist: ${duplicateFiles.map(f => f.name).join(', ')}`);
+      return;
+    }
+
+    setSelectedNewFiles(files);
+    setUploadError('');
+  };
+
+  const removeNewFile = (index: number) => {
+    setSelectedNewFiles(files => files.filter((_, i) => i !== index));
+  };
+
+  const handleUploadNewFiles = async () => {
+    if (selectedNewFiles.length === 0) {
+      setUploadError('Please select at least one PDF file');
+      return;
+    }
+
+    setIsUploadingFiles(true);
+    setUploadError('');
+
+    try {
+      const formData = new FormData();
+      selectedNewFiles.forEach(file => {
+        formData.append('files', file);
+      });
+      formData.append('description', description);
+
+      const response = await fetch(`${config.apiBaseUrl}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Upload failed');
+      }
+
+      const result = await response.json();
+      console.log('Upload response:', result);
+      
+      // Check if this is an old session-based response
+      if (result.session_id && !result.documents) {
+        console.error('Received old session-based response. Backend might be using old code:', result);
+        throw new Error('Backend returned session-based response. Please check if backend is up to date.');
+      }
+      
+      // Validate the response format
+      if (!result || !result.documents || !Array.isArray(result.documents)) {
+        console.error('Invalid response format. Expected {documents: [...], message: string}, got:', result);
+        throw new Error(`Invalid response format from server. Expected documents array, got: ${JSON.stringify(result, null, 2)}`);
+      }
+      
+      // Get the highest existing ID
+      const maxId = documents && documents.length > 0 ? Math.max(...documents.map(d => d?.id || 0).filter(id => id > 0)) : 0;
+      
+      // Update IDs for new documents
+      const newDocuments = result.documents.map((doc: DocumentData, index: number) => ({
+        ...doc,
+        id: maxId + index + 1
+      }));
+      
+      // Add to existing documents
+      onUpdateDocuments([...documents, ...newDocuments]);
+      
+      setSelectedNewFiles([]);
+      setShowUploadSection(false);
+      
+    } catch (err: any) {
+      setUploadError(err.message || 'Upload failed. Please try again.');
+      console.error('Upload error:', err);
+    } finally {
+      setIsUploadingFiles(false);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    setSelectedNewFiles([]);
+    setShowUploadSection(false);
+    setUploadError('');
+  };
+
+  const handleDeleteDocument = (documentId: number) => {
+    // Confirm deletion
+    if (confirm('Are you sure you want to delete this document?')) {
+      const updatedDocuments = documents.filter(doc => doc.id !== documentId);
+      onUpdateDocuments(updatedDocuments);
+      
+      // If no documents left, clear description as well
+      if (updatedDocuments.length === 0) {
+        onUpdateDescription('');
+      }
+    }
   };
 
   // Function to process page references in content before markdown
@@ -358,15 +416,11 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
       const cleanPageSpec = pageSpec.trim();
       
       // Convert to markdown link format with special data attributes
-      return `[${cleanFilename} (Page ${cleanPageSpec})](javascript:void(0) "data-pdf-ref=${cleanFilename}:${cleanPageSpec}")`;
+      return `[${cleanFilename} (Page ${cleanPageSpec})](javascript:void(0) "data-page-ref=${cleanFilename}:${cleanPageSpec}")`;
     });
     
     return processedContent;
   };
-
-
-
-   
 
   // Helper function to parse page specifications like "5", "2,7,12", "15-18"
   const parsePageSpecification = (pageSpec: string): number[] => {
@@ -398,136 +452,25 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
     return pages;
   };
 
-  const handleEditDescription = () => {
-    setEditedDescription(sessionInfo?.description || '');
-    setIsEditingDescription(true);
-  };
-
-  const handleSaveDescription = async () => {
-    if (!editedDescription.trim()) {
+  const handlePageReference = (filename: string, pageNumber: number) => {
+    // Find the document and page content
+    const document = documents.find(doc => doc.filename === filename);
+    if (!document) {
+      console.error('Document not found:', filename);
       return;
     }
-
-    try {
-      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}/description`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          description: editedDescription
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update description');
-      }
-
-      // Update local session info
-      setSessionInfo((prev: any) => ({
-        ...prev,
-        description: editedDescription
-      }));
-      
-      setIsEditingDescription(false);
-    } catch (error) {
-      console.error('Error updating description:', error);
-      // You could add error state here if needed
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditingDescription(false);
-    setEditedDescription('');
-  };
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
     
-    if (files.length > 100) {
-      setUploadError('Maximum 100 files allowed');
+    const page = document.pages.find(p => p.page_number === pageNumber);
+    if (!page) {
+      console.error('Page not found:', pageNumber, 'in', filename);
       return;
     }
-
-    // Validate file types
-    const invalidFiles = files.filter(file => !file.name.endsWith('.pdf'));
-    if (invalidFiles.length > 0) {
-      setUploadError('Only PDF files are allowed');
-      return;
-    }
-
-    // Check if adding these files would exceed total limit
-    const currentCount = sessionInfo?.documents?.length || 0;
-    if (currentCount + files.length > 100) {
-      setUploadError(`Adding ${files.length} files would exceed the 100 document limit. Current: ${currentCount}`);
-      return;
-    }
-
-    // Check for duplicate filenames
-    const existingFilenames = sessionInfo?.documents?.map((doc: any) => doc.filename) || [];
-    const duplicateFiles = files.filter(file => existingFilenames.includes(file.name));
-    if (duplicateFiles.length > 0) {
-      setUploadError(`Files already exist: ${duplicateFiles.map(f => f.name).join(', ')}`);
-      return;
-    }
-
-    setSelectedNewFiles(files);
-    setUploadError('');
-  };
-
-  const removeNewFile = (index: number) => {
-    setSelectedNewFiles(files => files.filter((_, i) => i !== index));
-  };
-
-  const handleUploadNewFiles = async () => {
-    if (selectedNewFiles.length === 0) {
-      setUploadError('Please select at least one PDF file');
-      return;
-    }
-
-    setIsUploadingFiles(true);
-    setUploadError('');
-
-    try {
-      const formData = new FormData();
-      selectedNewFiles.forEach(file => {
-        formData.append('files', file);
-      });
-
-      const response = await fetch(`${config.apiBaseUrl}/session/${sessionId}/documents`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Upload failed');
-      }
-
-      const result = await response.json();
-      
-      // Refresh session info to get updated document list
-      await fetchSessionInfo();
-      
-      // Clear upload state
-      setSelectedNewFiles([]);
-      setShowUploadSection(false);
-      
-      // You could show a success message here
-      console.log(`Successfully uploaded ${result.new_documents_count} documents`);
-      
-    } catch (err: any) {
-      setUploadError(err.message || 'Upload failed. Please try again.');
-      console.error('Upload error:', err);
-    } finally {
-      setIsUploadingFiles(false);
-    }
-  };
-
-  const handleCancelUpload = () => {
-    setSelectedNewFiles([]);
-    setShowUploadSection(false);
-    setUploadError('');
+    
+    setSelectedPageContent({
+      content: page.text,
+      pageNumber: pageNumber,
+      filename: filename
+    });
   };
 
   return (
@@ -537,61 +480,64 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
         <div className="flex justify-between items-center mb-3">
           <div className="flex-1">
             <h2 className="text-xl font-semibold text-gray-800">Chat with your documents</h2>
-            {sessionInfo && (
-              <div className="flex items-center space-x-2 mt-1">
-                <p className="text-sm text-gray-600">
-                  {sessionInfo.documents.length} document(s) •
-                </p>
-                {isEditingDescription ? (
-                  <div className="flex items-center space-x-2 flex-1">
-                    <input
-                      type="text"
-                      value={editedDescription}
-                      onChange={(e) => setEditedDescription(e.target.value)}
-                      className="text-sm text-gray-600 border border-gray-300 rounded px-2 py-1 flex-1"
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          handleSaveDescription();
-                        } else if (e.key === 'Escape') {
-                          handleCancelEdit();
-                        }
-                      }}
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleSaveDescription}
-                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={handleCancelEdit}
-                      className="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
+            <div className="flex items-center space-x-2 mt-1">
+              <p className="text-sm text-gray-600">
+                {documents.length} document(s) {documents.length > 0 ? '•' : ''}
+              </p>
+              {isEditingDescription ? (
+                <div className="flex items-center space-x-2 flex-1">
+                  <input
+                    type="text"
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    className="text-sm text-gray-600 border border-gray-300 rounded px-2 py-1 flex-1"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveDescription();
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveDescription}
+                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                              ) : documents.length > 0 ? (
                   <div className="flex items-center space-x-2">
-                    <p className="text-sm text-gray-600">{sessionInfo.description}</p>
+                    <p className="text-sm text-gray-600">{description}</p>
                     <button
                       onClick={handleEditDescription}
                       className="text-xs text-blue-600 hover:text-blue-800"
                       title="Edit description"
                     >
-                      ✏️
+                      Update document usage guide ✏️ 
                     </button>
                   </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Upload your first PDF document to get started</p>
                 )}
-              </div>
-            )}
+            </div>
           </div>
           <div className="flex space-x-2">
             <button
               onClick={() => setShowUploadSection(!showUploadSection)}
-              className="text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400 text-sm"
+              className={documents.length === 0 
+                ? "bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded text-sm font-medium"
+                : "text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-300 hover:border-gray-400 text-sm"
+              }
             >
-              Add Files
+              {documents.length === 0 ? "Add Your First Document" : "Add Files"}
             </button>
             <button
               onClick={onReset}
@@ -607,7 +553,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
           <div className="bg-gray-50 rounded-lg p-4 mb-3">
             <h3 className="text-lg font-medium text-gray-800 mb-3">Add New Documents</h3>
             
-            {/* File Upload Area */}
             <div className="mb-4">
               <div 
                 className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors cursor-pointer"
@@ -630,7 +575,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               </div>
             </div>
 
-            {/* Selected Files */}
             {selectedNewFiles.length > 0 && (
               <div className="mb-4">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">
@@ -654,14 +598,12 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               </div>
             )}
 
-            {/* Error Message */}
             {uploadError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
                 <p className="text-red-600 text-sm">{uploadError}</p>
               </div>
             )}
 
-            {/* Upload Buttons */}
             <div className="flex space-x-2">
               <button
                 onClick={handleUploadNewFiles}
@@ -681,7 +623,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
         )}
         
         {/* Document List */}
-        {sessionInfo && sessionInfo.documents.length > 0 && (
+        {documents.length > 0 && (
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
               <button
@@ -699,7 +641,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                 </svg>
               </button>
               <div className="flex items-center space-x-3">
-                <span className="text-xs text-gray-500">{sessionInfo.documents.length} files</span>
+                <span className="text-xs text-gray-500">{documents.length} files</span>
                 <span className="text-xs font-medium text-green-600">
                   Cost: ${totalSessionCost.toFixed(4)}
                 </span>
@@ -707,7 +649,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             </div>
             {showDocuments && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {sessionInfo.documents.map((doc: any, index: number) => (
+                {documents.map((doc, index) => (
                 <div
                   key={index}
                   className="flex items-center space-x-2 bg-white p-2 rounded border border-gray-200"
@@ -725,6 +667,18 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                       {doc.total_pages} pages
                     </p>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteDocument(doc.id);
+                    }}
+                    className="flex-shrink-0 ml-2 text-red-500 hover:text-red-700 p-1"
+                    title="Delete document"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
                 ))}
               </div>
@@ -735,7 +689,28 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
+        {documents.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center max-w-md">
+              <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No documents uploaded</h3>
+              <p className="text-gray-500 mb-4">
+                Upload PDF documents to start chatting about their content. Click "Add Files" above to get started.
+              </p>
+              <button
+                onClick={() => setShowUploadSection(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Your First Document
+              </button>
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="text-center text-gray-500 mt-8">
             <p>Ask me anything about your uploaded documents!</p>
             <p className="text-sm mt-2">Examples:</p>
@@ -745,7 +720,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               <li>• "What does it say about [specific topic]?"</li>
             </ul>
           </div>
-        )}
+        ) : null}
 
         {messages.map((message) => (
           <div
@@ -771,7 +746,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                     </span>
                   </div>
                   
-                  {/* Progress bar */}
                   <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
@@ -791,13 +765,12 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
               <div className="prose prose-sm max-w-none">
                 <ReactMarkdown
                   components={{
-                    // Custom styling for markdown elements
                     p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                     a: ({ href, title, children }) => {
-                      // Handle PDF reference links
-                      if (title && title.startsWith('data-pdf-ref=')) {
-                        const pdfRef = title.replace('data-pdf-ref=', '');
-                        const [filename, pageSpec] = pdfRef.split(':');
+                      // Handle page reference links
+                      if (title && title.startsWith('data-page-ref=')) {
+                        const pageRef = title.replace('data-page-ref=', '');
+                        const [filename, pageSpec] = pageRef.split(':');
                         const pages = parsePageSpecification(pageSpec);
                         
                         if (pages.length > 0) {
@@ -806,7 +779,7 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                             <button
                               onClick={() => handlePageReference(filename, pageNum)}
                               className="text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer mx-0.5"
-                              title={`View ${filename} - Page ${pageNum}`}
+                              title={`View ${filename} - Page ${pageNum} content`}
                             >
                               {children}
                             </button>
@@ -835,14 +808,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
                       ) : (
                         <code className={`block ${bgColor} p-2 rounded text-xs font-mono whitespace-pre-wrap`}>{children}</code>
                       );
-                    },
-                    pre: ({ children }) => {
-                      const bgColor = message.role === 'user' ? 'bg-blue-700 bg-opacity-50' : 'bg-gray-200';
-                      return <pre className={`${bgColor} p-2 rounded mb-2 overflow-x-auto`}>{children}</pre>;
-                    },
-                    blockquote: ({ children }) => {
-                      const borderColor = message.role === 'user' ? 'border-blue-300' : 'border-gray-300';
-                      return <blockquote className={`border-l-4 ${borderColor} pl-3 italic`}>{children}</blockquote>;
                     },
                     strong: ({ children }) => <strong className="font-bold">{children}</strong>,
                     em: ({ children }) => <em className="italic">{children}</em>,
@@ -880,8 +845,6 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             </div>
           </div>
         ))}
-
-
 
         <div ref={messagesEndRef} />
       </div>
@@ -926,14 +889,14 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             value={currentQuestion}
             onChange={(e) => setCurrentQuestion(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask a question about your documents..."
+            placeholder={documents.length === 0 ? "Upload documents first to start chatting..." : "Ask a question about your documents..."}
             className="flex-1 px-3 py-2 text-gray-700 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             rows={2}
-            disabled={isLoading}
+            disabled={isLoading || documents.length === 0}
           />
           <button
             onClick={handleSendMessage}
-            disabled={!currentQuestion.trim() || isLoading}
+            disabled={!currentQuestion.trim() || isLoading || documents.length === 0}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             Send
@@ -942,18 +905,19 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
       </div>
 
       {/* Page Content Modal */}
-      {selectedPage && (
+      {selectedPageContent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl max-h-[80vh] w-full flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">
-                  {selectedPage.filename} - Page {selectedPage.pageNumber}
+                  {selectedPageContent.filename} - Page {selectedPageContent.pageNumber}
                 </h3>
+                <p className="text-sm text-gray-600">Extracted Text Content</p>
               </div>
               <button
-                onClick={() => setSelectedPage(null)}
+                onClick={() => setSelectedPageContent(null)}
                 className="text-gray-500 hover:text-gray-700 focus:outline-none"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -963,55 +927,18 @@ export default function ChatSection({ sessionId, onReset }: ChatSectionProps) {
             </div>
             
             {/* Modal Content */}
-            <div className="flex-1 overflow-auto p-4 flex justify-center">
-              <div className="max-w-full">
-                <Document
-                  file={`${config.apiBaseUrl}/pdf/${selectedPage.sessionId}/${encodeURIComponent(selectedPage.filename)}`}
-                  onLoadSuccess={() => setPdfError(null)}
-                  onLoadError={(error) => {
-                    console.error('PDF load error:', error);
-                    setPdfError(error.message || 'Failed to load PDF');
-                  }}
-                  loading={
-                    <div className="flex items-center justify-center p-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      <span className="ml-3 text-gray-600">Loading PDF...</span>
-                    </div>
-                  }
-                  error={
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg max-w-md">
-                      <h4 className="text-red-800 font-medium mb-2">Unable to load PDF</h4>
-                      <p className="text-red-600 text-sm mb-3">
-                        {pdfError || 'The PDF file could not be displayed. This might be due to CORS policy or network issues.'}
-                      </p>
-                      <details className="text-sm">
-                        <summary className="cursor-pointer text-red-700 hover:text-red-900">Show extracted text instead</summary>
-                        <div className="mt-3 p-3 bg-white rounded border text-gray-800 whitespace-pre-wrap max-h-64 overflow-y-auto text-xs leading-relaxed">
-                          {selectedPage.content}
-                        </div>
-                      </details>
-                    </div>
-                  }
-                >
-                  <Page
-                    pageNumber={selectedPage.pageNumber}
-                    renderTextLayer={false}
-                    renderAnnotationLayer={false}
-                    className="border border-gray-300 shadow-lg"
-                    width={Math.min(800, window.innerWidth * 0.8)}
-                    onLoadError={(error) => {
-                      console.error('Page load error:', error);
-                      setPdfError(`Failed to load page ${selectedPage.pageNumber}`);
-                    }}
-                  />
-                </Document>
+            <div className="flex-1 overflow-auto p-6">
+              <div className="prose prose-sm max-w-none">
+                <div className="whitespace-pre-wrap text-gray-800 leading-relaxed">
+                  {selectedPageContent.content}
+                </div>
               </div>
             </div>
             
             {/* Modal Footer */}
             <div className="flex justify-end p-4 border-t border-gray-200">
               <button
-                onClick={() => setSelectedPage(null)}
+                onClick={() => setSelectedPageContent(null)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
                 Close

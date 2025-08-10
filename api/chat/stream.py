@@ -1,112 +1,58 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from typing import List
-import json
-import tempfile
+import sys
 import os
+import json
+import time
 import asyncio
+from http.server import BaseHTTPRequestHandler
 
-from models import (
-    ChatRequest,
-    UploadResponse,
-    DocumentData,
-    DocumentPage,
-)
-from pdf_processor import PDFProcessor
+# Add the backend directory to the Python path before importing
+backend_path = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+from models import ChatRequest
 from llm_service import LLMService
 
-app = FastAPI(title="PDF Chatbot API")
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "http://localhost:3004",
-        "http://localhost:3005",
-    ],  # Next.js dev server on various ports
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize services
-pdf_processor = PDFProcessor()
-llm_service = LLMService()
-
-
-@app.post("/upload", response_model=UploadResponse)
-async def upload_documents(
-    files: List[UploadFile] = File(...), description: str = Form(...)
-):
-    """Process PDF documents and return extracted text to client"""
-
-    if len(files) > 100:
-        raise HTTPException(status_code=400, detail="Maximum 100 documents allowed")
-
-    # Validate file types
-    for file in files:
-        if not file.filename.endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-
-    # Process files and extract text
-    documents = []
-    for i, file in enumerate(files):
-        # Create temporary file for processing
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(await file.read())
-            temp_file_path = temp_file.name
-
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
         try:
-            # Extract text from PDF
-            pages_data = pdf_processor.extract_pages(temp_file_path)
+            # Set CORS headers
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
 
-            # Convert to DocumentPage objects
-            pages = [
-                DocumentPage(page_number=page["page_number"], text=page["text"])
-                for page in pages_data
-            ]
+            # Read request body
+            content_length = int(self.headers["Content-Length"])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode("utf-8"))
 
-            documents.append(
-                DocumentData(
-                    id=i + 1,
-                    filename=file.filename,
-                    pages=pages,
-                    total_pages=len(pages),
-                )
-            )
+            # Parse request using ChatRequest model
+            request = ChatRequest(**request_data)
+
+            # Initialize LLM service
+            llm_service = LLMService()
+
+            # Process the chat request and stream response
+            asyncio.run(self._process_chat_request(request, llm_service))
+
         except Exception as e:
-            print(f"PDF processing error for {file.filename}: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error processing {file.filename}: {str(e)}"
-            )
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_file_path)
-            except:
-                pass
+            error_data = {"type": "error", "error": str(e)}
+            self.wfile.write(f"data: {json.dumps(error_data)}\n\n".encode())
+            print(f"❌ Error in chat handler: {str(e)}")
 
-    return UploadResponse(
-        documents=documents, message=f"Successfully processed {len(files)} documents"
-    )
+    async def _process_chat_request(self, request, llm_service):
+        """Process chat request with streaming response"""
+        start_time = time.time()
+        print(f"🌊 Streaming chat request started")
+        print(f"📝 Question: {request.question}")
+        print(f"📊 Received {len(request.documents)} documents")
 
-
-@app.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
-    """Handle chat requests with streaming response - stateless"""
-    import time
-
-    start_time = time.time()
-    print(f"🌊 Streaming chat request started")
-    print(f"📝 Question: {request.question}")
-    print(f"📊 Received {len(request.documents)} documents")
-
-    async def stream_response():
         try:
             total_cost = 0.0
 
@@ -137,7 +83,8 @@ async def chat_stream(request: ChatRequest):
                 "step_number": 1,
                 "total_steps": 3,
             }
-            yield f"data: {json.dumps(doc_selection_status)}\n\n"
+            self.wfile.write(f"data: {json.dumps(doc_selection_status)}\n\n".encode())
+            self.wfile.flush()
 
             print("⏱️ Step 1: Starting document selection...")
             selected_docs, step1_cost = await llm_service.select_documents(
@@ -161,7 +108,8 @@ async def chat_stream(request: ChatRequest):
                 "cost": step1_cost,
                 "time_taken": step1_time,
             }
-            yield f"data: {json.dumps(doc_selection_complete)}\n\n"
+            self.wfile.write(f"data: {json.dumps(doc_selection_complete)}\n\n".encode())
+            self.wfile.flush()
 
             # Step 2: Find relevant pages
             step2_start = time.time()
@@ -172,10 +120,10 @@ async def chat_stream(request: ChatRequest):
                 "step_number": 2,
                 "total_steps": 3,
             }
-            yield f"data: {json.dumps(page_selection_status)}\n\n"
+            self.wfile.write(f"data: {json.dumps(page_selection_status)}\n\n".encode())
+            self.wfile.flush()
 
             print("⏱️ Step 2: Starting page selection...")
-            # Process documents in parallel to maintain filename context
 
             async def process_document(doc):
                 return await llm_service.find_relevant_pages(
@@ -211,7 +159,10 @@ async def chat_stream(request: ChatRequest):
                 "cost": step2_cost,
                 "time_taken": step2_time,
             }
-            yield f"data: {json.dumps(page_selection_complete)}\n\n"
+            self.wfile.write(
+                f"data: {json.dumps(page_selection_complete)}\n\n".encode()
+            )
+            self.wfile.flush()
 
             # Step 3: Generate answer
             step3_start = time.time()
@@ -222,7 +173,10 @@ async def chat_stream(request: ChatRequest):
                 "step_number": 3,
                 "total_steps": 3,
             }
-            yield f"data: {json.dumps(answer_generation_status)}\n\n"
+            self.wfile.write(
+                f"data: {json.dumps(answer_generation_status)}\n\n".encode()
+            )
+            self.wfile.flush()
 
             print("⏱️ Step 3: Starting answer generation...")
 
@@ -235,7 +189,8 @@ async def chat_stream(request: ChatRequest):
                         "type": "content",
                         "content": chunk["content"],
                     }
-                    yield f"data: {json.dumps(content_data)}\n\n"
+                    self.wfile.write(f"data: {json.dumps(content_data)}\n\n".encode())
+                    self.wfile.flush()
                 elif chunk.get("type") == "cost":
                     total_cost += chunk["cost"]
 
@@ -259,7 +214,8 @@ async def chat_stream(request: ChatRequest):
                     "total_cost": total_cost,
                 },
             }
-            yield f"data: {json.dumps(completion_data)}\n\n"
+            self.wfile.write(f"data: {json.dumps(completion_data)}\n\n".encode())
+            self.wfile.flush()
 
             print(
                 f"🎉 Request completed in {total_time:.2f}s, total cost: ${total_cost:.4f}"
@@ -267,21 +223,13 @@ async def chat_stream(request: ChatRequest):
 
         except Exception as e:
             error_data = {"type": "error", "error": str(e)}
-            yield f"data: {json.dumps(error_data)}\n\n"
+            self.wfile.write(f"data: {json.dumps(error_data)}\n\n".encode())
             print(f"❌ Error in stream_response: {str(e)}")
 
-    return StreamingResponse(
-        stream_response(),
-        media_type="text/plain",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Content-Type": "text/event-stream",
-        },
-    )
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "mode": "stateless"}
+    def do_OPTIONS(self):
+        # Handle CORS preflight
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()

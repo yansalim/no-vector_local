@@ -9,11 +9,24 @@ class ChatMessage(BaseModel):
     timestamp: Optional[str] = None
 
 
+class DocumentPage(BaseModel):
+    page_number: int
+    text: str
+
+
+class DocumentData(BaseModel):
+    id: int
+    filename: str
+    pages: List[DocumentPage]
+    total_pages: int
+
+
 class ChatRequest(BaseModel):
-    session_id: str
     question: str
+    documents: List[DocumentData]  # Documents sent from client
+    description: str  # Collection description
     chat_history: Optional[List[ChatMessage]] = []
-    model: Optional[str] = "gpt-5-mini"  # Default to gpt-5-mini
+    model: Optional[str] = "gpt-5-mini"
 
 
 class ChatResponse(BaseModel):
@@ -24,7 +37,7 @@ class ChatResponse(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    session_id: str
+    documents: List[DocumentData]  # Return processed documents to client
     message: str
 
 
@@ -33,7 +46,7 @@ class UpdateDescriptionRequest(BaseModel):
 
 
 class AddDocumentsResponse(BaseModel):
-    session_id: str
+    documents: List[DocumentData]  # Return all documents including new ones
     message: str
     new_documents_count: int
 

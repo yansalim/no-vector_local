@@ -128,6 +128,8 @@ class LLMService:
         filename: str,
         chat_history: List[Dict[str, Any]] = None,
     ) -> tuple[List[Dict[str, Any]], float]:
+        print("find_relevant_pages")
+        print(filename)
         """Find relevant pages by processing 20 pages at a time in parallel"""
 
         # Create chunks of 20 pages
@@ -181,6 +183,14 @@ class LLMService:
         # Prepare content for LLM
         pages_content = []
         for page in chunk:
+            # Defensive check for required fields
+            if "page_number" not in page:
+                print(f"Warning: page missing 'page_number': {page.keys()}")
+                continue
+            if "text" not in page:
+                print(f"Warning: page missing 'text': {page.keys()}")
+                continue
+
             pages_content.append(
                 {
                     "page_number": page["page_number"],
@@ -235,6 +245,8 @@ class LLMService:
             # Add full page data for relevant pages
             relevant_pages = []
             for page in chunk:
+                if "page_number" not in page:
+                    continue
                 if page["page_number"] in relevant_page_numbers:
                     page_with_source = page.copy()
                     page_with_source["source_document"] = filename
@@ -273,15 +285,6 @@ class LLMService:
             yield {"type": "cost", "cost": 0.0}
             return
 
-        # Prepare content from all relevant pages
-        context = ""
-        for page in relevant_pages:
-            context += (
-                f"\n--- Page {page['page_number']} from {page['source_document']} ---\n"
-            )
-            context += page["text"]
-            context += "\n"
-
         # Format chat history for conversational context
         history_context = ""
         if chat_history:
@@ -294,7 +297,7 @@ class LLMService:
                     role = msg.get("role", "unknown")
                     content = msg.get("content", "")
                 history_context += f"{role.capitalize()}: {content}\n"
-
+        print(relevant_pages)
         prompt = f"""
             Based on the following chat history context, PDF document context, and current question, answer the question. 
             Provide answer and cite which documents and pages you're referencing.
@@ -308,12 +311,16 @@ class LLMService:
             - For page range: $PAGE_STARTmanual.pdf:15-18$PAGE_END
 
             <Chat History>
-            {context}
+            {history_context}
             <Chat History>
-
+            
             <Current Question>
             {question}
             <Current Question>
+
+            <Document Page Content>
+            {json.dumps(relevant_pages)}
+            <Document Page Content>
 
             Please provide answer based on the information in the documents and use the special page reference format when citing specific pages.
             No need to mention the chat history in the answer, just focus on the current question.

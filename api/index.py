@@ -1,35 +1,56 @@
 import sys
 import os
-from pathlib import Path
+import json
+from http.server import BaseHTTPRequestHandler
 
 # Add the backend directory to the Python path before importing
-current_dir = Path(__file__).parent
-backend_path = str(current_dir.parent / "backend")
-
+backend_path = os.path.join(os.path.dirname(__file__), "..", "backend")
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-# Set VERCEL environment variable for the backend code
-os.environ["VERCEL"] = "1"
 
-# Now import the FastAPI app
-app = None
-import_error = None
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Root endpoint with API documentation"""
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
 
+        response_data = {
+            "message": "PDF Chatbot API",
+            "version": "1.0.0",
+            "endpoints": {
+                "upload": "/api/upload - POST - Upload PDF documents",
+                "chat": "/api/chat/stream - POST - Stream chat responses",
+                "health": "/api/health - GET - Health check",
+            },
+            "status": "ready",
+        }
+        self.wfile.write(json.dumps(response_data).encode())
+
+    def do_OPTIONS(self):
+        # Handle CORS preflight
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+
+# Fallback for FastAPI compatibility (if needed for local development)
 try:
-    from main import app
+    from main import app as fastapi_app
 
-    print("Successfully imported FastAPI app from backend/main.py")
-except ImportError as e:
-    import_error = str(e)
-    print(f"Failed to import main app: {import_error}")
-    # Fallback if main.py is not found
+    app = fastapi_app
+except ImportError:
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
-    app = FastAPI(title="PDF Chatbot API - Fallback")
+    app = FastAPI()
 
-    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -40,12 +61,14 @@ except ImportError as e:
 
     @app.get("/")
     def read_root():
-        return {"message": "Backend not properly configured", "error": import_error}
-
-    @app.get("/health")
-    def health_check():
-        return {"status": "fallback", "error": f"Import error: {import_error}"}
-
-
-# Export the app for Vercel
-application = app
+        return {
+            "message": "PDF Chatbot API (FastAPI Fallback)",
+            "version": "1.0.0",
+            "note": "Using FastAPI fallback mode",
+            "endpoints": {
+                "upload": "/api/upload - POST - Upload PDF documents",
+                "chat": "/api/chat/stream - POST - Stream chat responses",
+                "health": "/api/health - GET - Health check",
+            },
+            "status": "fallback",
+        }
