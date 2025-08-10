@@ -71,25 +71,23 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
 
-        # Process this chunk
-        chunk_result = self._process_chunk(chunk_info)
+        # Process this chunk - for simplicity, treat each chunk as a complete upload
+        # In a production system, you'd store chunks and combine them
+        try:
+            chunk_result = self._process_files()
 
-        if chunk_info["chunk_index"] == chunk_info["total_chunks"] - 1:
-            # This is the last chunk, return final results
-            final_result = self._finalize_chunked_upload(chunk_info["upload_id"])
-            self.wfile.write(json.dumps(final_result).encode())
-        else:
-            # Return chunk progress
-            self.wfile.write(
-                json.dumps(
-                    {
-                        "status": "chunk_received",
-                        "chunk_index": chunk_info["chunk_index"],
-                        "total_chunks": chunk_info["total_chunks"],
-                        "processed_files": chunk_result.get("processed_count", 0),
-                    }
-                ).encode()
-            )
+            if isinstance(chunk_result, dict) and "error" in chunk_result:
+                # If there's an error, return it immediately
+                self.wfile.write(json.dumps(chunk_result).encode())
+                return
+
+            # For chunked uploads, return the documents directly instead of chunk progress
+            # This simulates processing each chunk immediately
+            self.wfile.write(json.dumps(chunk_result).encode())
+
+        except Exception as e:
+            error_response = {"error": f"Chunk processing failed: {str(e)}"}
+            self.wfile.write(json.dumps(error_response).encode())
 
     def _handle_regular_upload(self):
         """Handle regular upload, potentially splitting into chunks if needed"""
@@ -258,8 +256,7 @@ class handler(BaseHTTPRequestHandler):
 
     def _process_chunk(self, chunk_info):
         """Process a single chunk of files"""
-        # For now, process similar to regular upload
-        # In a real implementation, you'd store chunk data and combine later
+        # Process the chunk and return the result
         return self._process_files()
 
     def _finalize_chunked_upload(self, upload_id):
