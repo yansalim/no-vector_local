@@ -19,19 +19,16 @@ def get_storage_dirs():
 def save_session(session_id: str, session_data: Dict[str, Any]):
     """Save session to disk"""
     _, session_dir = get_storage_dirs()
-    try:
-        session_file = session_dir / f"{session_id}.json"
-        session_dict = session_data.copy()
-        if "created_at" in session_dict and isinstance(
-            session_dict["created_at"], datetime
-        ):
-            session_dict["created_at"] = session_dict["created_at"].isoformat()
+    session_file = session_dir / f"{session_id}.json"
+    session_dict = session_data.copy()
+    if "created_at" in session_dict and isinstance(
+        session_dict["created_at"], datetime
+    ):
+        session_dict["created_at"] = session_dict["created_at"].isoformat()
 
-        with open(session_file, "w") as f:
-            json.dump(session_dict, f)
-        print(f"Session saved: {session_id}")
-    except Exception as e:
-        print(f"Error saving session {session_id}: {e}")
+    with open(session_file, "w") as f:
+        json.dump(session_dict, f)
+    print(f"Session saved: {session_id}")
 
 
 def send_json_response(handler, data: Dict[str, Any], status_code: int = 200):

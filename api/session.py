@@ -22,7 +22,9 @@ def load_sessions():
     _, session_dir = get_storage_dirs()
 
     if session_dir.exists():
+        print(f"Loading sessions from {session_dir}")
         for session_file in session_dir.glob("*.json"):
+            print("Loading something")
             try:
                 with open(session_file, "r") as f:
                     session_data = json.load(f)
