@@ -25,9 +25,14 @@ def save_session(session_id: str, session_data: Dict[str, Any]):
         session_dict["created_at"], datetime
     ):
         session_dict["created_at"] = session_dict["created_at"].isoformat()
-
+    print(session_file)
     with open(session_file, "w") as f:
         json.dump(session_dict, f)
+
+    # Load the saved file back and print it to check validity
+    with open(session_file, "r") as f:
+        loaded_data = json.load(f)
+        print(f"Loaded session data for validation: {loaded_data}")
     print(f"Session saved: {session_id}")
 
 
