@@ -20,6 +20,30 @@
             "dest": "/api/test.py"
         },
         {
+            "src": "/api/health",
+            "dest": "/api/health.py"
+        },
+        {
+            "src": "/api/session/([^/]+)$",
+            "dest": "/api/session.py"
+        },
+        {
+            "src": "/api/session/([^/]+)/description",
+            "dest": "/api/description.py"
+        },
+        {
+            "src": "/api/session/([^/]+)/documents",
+            "dest": "/api/documents.py"
+        },
+        {
+            "src": "/api/chat/stream",
+            "dest": "/api/chat.py"
+        },
+        {
+            "src": "/api/pdf/([^/]+)/(.+)",
+            "dest": "/api/pdf.py"
+        },
+        {
             "src": "/api/(.*)",
             "dest": "/api/index.py"
         },
