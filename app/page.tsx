@@ -112,10 +112,10 @@ export default function Home() {
           </a>
           
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            PDF Document Chatbot
+            Vectorless PDF Chatbot
           </h1>
           <p className="text-gray-600">
-            Upload PDFs and ask questions about their content - completely stateless and secure
+            Chat with your PDF, no vector needed.
           </p>
         </div>
 
