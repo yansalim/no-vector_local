@@ -193,8 +193,8 @@ export class ChunkedUploader {
           onChunkComplete(i, chunks.length);
         }
 
-        // Collect documents from each chunk
-        if (result.documents) {
+        // Each chunk now returns documents directly
+        if (result.documents && Array.isArray(result.documents)) {
           allDocuments.push(...result.documents);
         }
 
