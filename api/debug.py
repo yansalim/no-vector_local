@@ -1,5 +1,4 @@
 from http.server import BaseHTTPRequestHandler
-import urllib.parse
 import json
 import tempfile
 from pathlib import Path
@@ -47,14 +46,8 @@ def send_json_response(handler, data: Dict[str, Any], status_code: int = 200):
     handler.send_header("Access-Control-Allow-Headers", "Content-Type")
     handler.end_headers()
 
-    response_json = json.dumps(data)
+    response_json = json.dumps(data, default=str)  # default=str to handle datetime
     handler.wfile.write(response_json.encode("utf-8"))
-
-
-def send_error_response(handler, message: str, status_code: int = 500):
-    """Send error response"""
-    error_data = {"error": message, "status_code": status_code}
-    send_json_response(handler, error_data, status_code)
 
 
 def handle_cors_preflight(handler):
@@ -71,51 +64,35 @@ def handle_cors_preflight(handler):
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            # Load sessions fresh each time (serverless)
+            upload_dir, session_dir = get_storage_dirs()
             sessions = load_sessions()
-            print(f"Loaded {len(sessions)} sessions: {list(sessions.keys())}")
 
-            # Parse URL to get session_id
-            parsed_url = urllib.parse.urlparse(self.path)
-            path_parts = parsed_url.path.strip("/").split("/")
-            print(f"Request path: {self.path}, parsed parts: {path_parts}")
+            # List all files in session directory
+            session_files = []
+            if session_dir.exists():
+                session_files = [f.name for f in session_dir.glob("*.json")]
 
-            # Expect path like /api/session/{session_id}
-            if len(path_parts) < 3:
-                send_error_response(self, "Session ID required", 400)
-                return
+            # List all directories in upload directory
+            upload_dirs = []
+            if upload_dir.exists():
+                upload_dirs = [f.name for f in upload_dir.iterdir() if f.is_dir()]
 
-            session_id = path_parts[2]  # /api/session/{session_id}
-            print(f"Looking for session_id: {session_id}")
-
-            if session_id not in sessions:
-                print(
-                    f"Session {session_id} not found in available sessions: {list(sessions.keys())}"
-                )
-                send_error_response(self, "Session not found", 404)
-                return
-
-            session_data = sessions[session_id]
-            print(f"Found session data for {session_id}")
-
-            # Prepare response data
-            response_data = {
-                "session_id": session_id,
-                "description": session_data.get("description", ""),
-                "documents": session_data.get("documents", []),
-                "created_at": session_data.get("created_at"),
-                "total_session_cost": session_data.get("total_session_cost", 0.0),
+            debug_info = {
+                "temp_dir": str(tempfile.gettempdir()),
+                "session_dir": str(session_dir),
+                "upload_dir": str(upload_dir),
+                "session_files": session_files,
+                "upload_directories": upload_dirs,
+                "loaded_sessions": list(sessions.keys()),
+                "session_count": len(sessions),
+                "sessions_data": sessions,
             }
 
-            # Convert datetime to string if needed
-            if hasattr(response_data["created_at"], "isoformat"):
-                response_data["created_at"] = response_data["created_at"].isoformat()
-
-            send_json_response(self, response_data)
+            send_json_response(self, debug_info)
 
         except Exception as e:
-            print(f"Error in session endpoint: {e}")
-            send_error_response(self, f"Internal server error: {str(e)}")
+            error_data = {"error": str(e), "message": "Debug endpoint failed"}
+            send_json_response(self, error_data, 500)
 
     def do_OPTIONS(self):
         handle_cors_preflight(self)

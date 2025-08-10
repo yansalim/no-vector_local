@@ -20,6 +20,10 @@
             "dest": "/api/test.py"
         },
         {
+            "src": "/api/debug",
+            "dest": "/api/debug.py"
+        },
+        {
             "src": "/api/health",
             "dest": "/api/health.py"
         },
