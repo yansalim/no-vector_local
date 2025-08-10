@@ -8,11 +8,27 @@
         {
             "src": "api/*.py",
             "use": "@vercel/python"
+        },
+        {
+            "src": "api/**/*.py",
+            "use": "@vercel/python"
         }
     ],
     "routes": [
         {
-            "src": "/api/(.*)",
+            "src": "/api/upload",
+            "dest": "/api/upload.py"
+        },
+        {
+            "src": "/api/chat/stream",
+            "dest": "/api/chat/stream.py"
+        },
+        {
+            "src": "/api/health",
+            "dest": "/api/health.py"
+        },
+        {
+            "src": "/api/?",
             "dest": "/api/index.py"
         },
         {
