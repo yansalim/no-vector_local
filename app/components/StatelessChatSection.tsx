@@ -242,6 +242,9 @@ export default function StatelessChatSection({
                       }
                     : msg
                 ));
+                
+                // Reset loading state when streaming is complete
+                setIsLoading(false);
               } else if (data.type === 'error') {
                 throw new Error(data.error);
               }
