@@ -76,27 +76,29 @@ graph TD
 ## 🛠 Technology Stack
 
 ### Frontend
-- **Next.js 15**: React framework with App Router
-- **TypeScript**: Type safety and better development experience
-- **Tailwind CSS**: Modern utility-first styling
-- **Lucide React**: Beautiful, consistent icons
+- **React + Vite**: SPA build with lightning-fast dev server and static output
+- **TypeScript**: Type safety and better DX
+- **Tailwind CSS**: Utility-first styling (via PostCSS plugin)
+- **Lucide React**: Clean, consistent icon set
 
-### Backend (Vercel Functions)
-- **Python Functions**: Serverless API endpoints
-- **PyPDF2**: Reliable PDF text extraction
-- **OpenAI GPT**: Advanced language models for reasoning
-- **Chunked Processing**: Handle large uploads efficiently
+### Backend (FastAPI)
+- **FastAPI + Uvicorn**: High-performance Python API
+- **PyPDF2**: Robust PDF text extraction
+- **OpenAI (optional)**: LLM reasoning for doc/page selection and answers
+- **Chunked Processing**: Efficient multi-file uploads
 
 ### Infrastructure
-- **Vercel Deployment**: Seamless serverless hosting
+- **Docker Compose**: One command to run frontend (Nginx) and backend
 - **No Databases**: Completely stateless architecture
-- **Automatic Scaling**: Handle traffic spikes effortlessly
+- **Nginx**: Serves built React app and proxies API
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+ and npm
-- OpenAI API key
+- Python 3.10+ (se tiver que iniciar backend manualmente)
+- Docker (opcional, para rodar com containers)
+- OpenAI API key (opcional, habilita raciocínio LLM completo)
 
 ### 1. Clone and Install
 ```bash
@@ -106,23 +108,44 @@ npm install
 ```
 
 ### 2. Environment Setup
-Create `.env.local`:
+- Frontend (dev): usa `VITE_API_BASE_URL` para apontar para o backend
+- Backend: usa `OPENAI_API_KEY` (opcional)
+
+Crie `.env` na raiz do backend (ou exporte a variável):
 ```bash
-# Only needed for local development
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-### 3. Run Locally
+### 3. Run Locally (com Node)
 ```bash
+# inicia frontend (Vite) + backend (Uvicorn) em paralelo (Windows-friendly)
 npm run dev
-```
-Visit http://localhost:3000
 
-### 4. Deploy to Vercel
-1. Push to GitHub
-2. Connect to Vercel
-3. Set environment variable: `OPENAI_API_KEY=your_key`
-4. Deploy! ✅
+# somente frontend (porta 3000)
+npm run web
+
+# somente backend (porta 8000)
+npm run backend:win
+```
+Visite http://localhost:3000 (ou 3001 se 3000 estiver em uso)
+
+Caso o backend esteja em outra URL na sua máquina, exporte antes de buildar o frontend:
+```bash
+set VITE_API_BASE_URL=http://localhost:8000 && npm run web
+```
+
+### 4. Rodando com Docker (recomendado)
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+Ambientes úteis (via docker-compose.yml):
+- `BACKEND_URL` (passa para o build como `VITE_API_BASE_URL` no frontend)
+- `OPENAI_API_KEY` (backend)
+
+URLs:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000/health
 
 ## 📖 How to Use
 
@@ -147,14 +170,14 @@ Visit http://localhost:3000
 
 ### Stateless Design
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Browser       │    │  Vercel Functions │    │   OpenAI API    │
-│                 │    │                  │    │                 │
-│ • LocalStorage  │◄──►│ • /api/upload    │◄──►│ • GPT Models    │
-│ • Document Data │    │ • /api/chat/stream│    │ • Real-time     │
-│ • Chat History  │    │ • No Storage     │    │   Processing    │
-│ • Session State │    │ • Stateless      │    │                 │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌───────────────┐    ┌─────────────────┐
+│   Browser       │    │   FastAPI     │    │   OpenAI API    │
+│                 │    │               │    │                 │
+│ • LocalStorage  │◄──►│ • /upload     │◄──►│ • GPT Models    │
+│ • Document Data │    │ • /chat/stream│    │ • Real-time     │
+│ • Chat History  │    │ • /health     │    │   Processing    │
+│ • Session State │    │ • Stateless   │    │                 │
+└─────────────────┘    └───────────────┘    └─────────────────┘
 ```
 
 ### Chunked Upload System
@@ -165,21 +188,21 @@ When uploading large document sets:
 4. **Progressive Results**: Documents become available as chunks complete
 5. **Error Recovery**: Failed chunks can be retried individually
 
-## 🔧 API Endpoints
+## 🔧 API Endpoints (FastAPI)
 
-### `POST /api/upload`
+### `POST /upload`
 Upload and process PDF documents
 - **Input**: FormData with files and description
 - **Output**: Processed documents with extracted text
 - **Features**: Automatic chunking, progress tracking
 
-### `POST /api/chat/stream`
+### `POST /chat/stream`
 Stream chat responses in real-time
 - **Input**: Question, documents, chat history
 - **Output**: Server-sent events with processing steps
 - **Features**: Real-time progress, cost tracking, citations
 
-### `GET /api/health`
+### `GET /health`
 Service health check
 - **Output**: System status and mode information
 
