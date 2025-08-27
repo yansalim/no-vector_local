@@ -53,7 +53,7 @@ graph TD
 - **Zero Server Storage**: Documents processed and stored entirely in your browser
 - **LocalStorage Persistence**: Your documents persist across browser sessions
 - **No Data Leakage**: Document content never persists on servers
-- **Serverless-Friendly**: Perfect for Vercel/Netlify deployments
+
 
 ### 📁 **Advanced File Handling**
 - **Up to 100 PDF documents** per session

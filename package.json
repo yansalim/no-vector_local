@@ -12,7 +12,6 @@
     "dev:all": "concurrently -n backend,web -c blue,green \"npm:backend:win\" \"npm:web\""
   },
   "dependencies": {
-    "@vercel/blob": "^1.1.1",
     "lucide-react": "^0.539.0",
     "openai": "^5.12.2",
     "react": "19.1.0",
