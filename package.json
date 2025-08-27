@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "web": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "backend": "cd backend && ./start.sh",
-    "dev:all": "concurrently \"npm run backend\" \"npm run dev\""
+    "backend:win": "cd backend && python -m pip install -r requirements.txt && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev": "concurrently -n backend,web -c blue,green \"npm:backend:win\" \"npm:web\"",
+    "dev:all": "concurrently -n backend,web -c blue,green \"npm:backend:win\" \"npm:web\""
   },
   "dependencies": {
     "@vercel/blob": "^1.1.1",
