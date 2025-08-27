@@ -1,9 +1,7 @@
-'use client';
-
-import { useMemo } from 'react';
-import StatelessChatSection from './components/StatelessChatSection';
-import GitHubIcon from './components/GitHubIcon';
-import { usePersistentState } from './hooks/usePersistentState';
+import React, { useMemo } from 'react';
+import StatelessChatSection from '../app/components/StatelessChatSection';
+import GitHubIcon from '../app/components/GitHubIcon';
+import { usePersistentState } from '../app/hooks/usePersistentState';
 
 interface DocumentData {
   id: number;
@@ -12,7 +10,7 @@ interface DocumentData {
   total_pages: number;
 }
 
-export default function Home() {
+export default function App() {
   const [documents, setDocuments] = usePersistentState<DocumentData[]>('chatbot_documents', []);
   const [description, setDescription] = usePersistentState<string>('chatbot_description', '');
 
@@ -38,7 +36,6 @@ export default function Home() {
     <main className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8 relative">
-          {/* GitHub Icon */}
           <a
             href="https://github.com/roe-ai/vectorless-chatbot"
             target="_blank"
@@ -51,13 +48,8 @@ export default function Home() {
             </span>
             <GitHubIcon className="w-8 h-8" />
           </a>
-          
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Vectorless PDF Chatbot
-          </h1>
-          <p className="text-gray-600">
-            Chat with your PDF, no vector needed.
-          </p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Vectorless PDF Chatbot</h1>
+          <p className="text-gray-600">Chat with your PDF, no vector needed.</p>
         </div>
 
         <div className="max-w-6xl mx-auto h-[80vh]">
@@ -73,3 +65,5 @@ export default function Home() {
     </main>
   );
 }
+
+

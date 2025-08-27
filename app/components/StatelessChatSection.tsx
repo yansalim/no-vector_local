@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Send, Upload, X, FileText, Eye, EyeOff, Settings, Plus, Trash2, Edit2, Check, RotateCcw } from 'lucide-react';
 import config from '../../config';
 import ChunkedUploader from '../utils/chunkedUpload';
 
@@ -271,9 +270,9 @@ export default function StatelessChatSection({
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
       handleSendMessage();
     }
   };
@@ -911,7 +910,7 @@ export default function StatelessChatSection({
           <textarea
             value={currentQuestion}
             onChange={(e) => setCurrentQuestion(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder={documents.length === 0 ? "Upload documents first to start chatting..." : "Ask a question about your documents..."}
             className="flex-1 px-3 py-2 text-gray-700 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             rows={2}

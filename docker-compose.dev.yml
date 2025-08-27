@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Frontend service (Next.js) - Development mode
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-builder
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - vectorless-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Backend service (FastAPI) - Development mode
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+    networks:
+      - vectorless-network
+    restart: unless-stopped
+    command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+networks:
+  vectorless-network:
+    driver: bridge
+
+volumes:
+  uploads:
