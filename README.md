@@ -1,23 +1,23 @@
-# Vectorless PDF Chatbot
+# No-Vector PDF Chat
 
 A revolutionary PDF chatbot that uses **no vector embeddings** or traditional RAG. Instead, it leverages Large Language Models for intelligent document selection and page relevance detection, providing a completely stateless and privacy-first experience.
 
-## 🚀 What Makes This "Vectorless"?
+## 🚀 What Makes This "No-Vector"?
 
 Traditional PDF chatbots convert documents into vector embeddings for semantic search. This approach:
-- **❌ Requires expensive vector databases**
-- **❌ Needs pre-processing and indexing**
-- **❌ Stores document data on servers**
-- **❌ Loses context and nuance in embeddings**
+- ❌ **Requires expensive vector databases**
+- ❌ **Needs pre-processing and indexing**
+- ❌ **Stores document data on servers**
+- ❌ **Loses context and nuance in embeddings**
 
-Our **Vectorless** approach:
-- **✅ Uses LLM reasoning instead of vectors**
-- **✅ Processes documents in real-time**
-- **✅ Completely stateless - no server storage**
-- **✅ Preserves full document context**
-- **✅ Privacy-first - documents stay in your browser**
+Our **No-Vector** approach:
+- ✅ **Uses LLM reasoning instead of vectors**
+- ✅ **Processes documents in real-time**
+- ✅ **Completely stateless - no server storage**
+- ✅ **Preserves full document context**
+- ✅ **Privacy-first - documents stay in your browser**
 
-## 🧠 How the Vectorless Process Works
+## 🧠 How the No-Vector Process Works
 
 ### 3-Step Intelligent Document Analysis
 
@@ -62,7 +62,7 @@ graph TD
 - **Real-time Processing**: No pre-indexing required
 
 ### 💡 **Intelligent Processing**
-- **Multi-Model Support**: GPT-4, GPT-5-mini, and more
+- **Multi-Model Support**: GPT-5 GPT-5-mini, and more
 - **Parallel Processing**: Multiple documents analyzed simultaneously
 - **Context Preservation**: Full document context maintained throughout
 - **Dynamic Descriptions**: Edit collection descriptions anytime
@@ -84,7 +84,7 @@ graph TD
 ### Backend (FastAPI)
 - **FastAPI + Uvicorn**: High-performance Python API
 - **PyPDF2**: Robust PDF text extraction
-- **OpenAI (optional)**: LLM reasoning for doc/page selection and answers
+- **OpenAI**: LLM reasoning for doc/page selection and answers
 - **Chunked Processing**: Efficient multi-file uploads
 
 ### Infrastructure
@@ -96,51 +96,51 @@ graph TD
 
 ### Prerequisites
 - Node.js 18+ and npm
-- Python 3.10+ (se tiver que iniciar backend manualmente)
-- Docker (opcional, para rodar com containers)
-- OpenAI API key (opcional, habilita raciocínio LLM completo)
+- Python 3.10+ (if you need to start the backend manually)
+- Docker (optional, to run with containers)
+- OpenAI API key (required for full functionality)
 
 ### 1. Clone and Install
 ```bash
-git clone https://github.com/roe-ai/vectorless-chatbot.git
-cd vectorless-chatbot
+git clone https://github.com/yansalim/no-vector_local.git
+cd no-vector_local
 npm install
 ```
 
 ### 2. Environment Setup
-- Frontend (dev): usa `VITE_API_BASE_URL` para apontar para o backend
-- Backend: usa `OPENAI_API_KEY` (opcional)
+- Frontend (dev): uses `VITE_API_BASE_URL` to point to the backend
+- Backend: uses `OPENAI_API_KEY` (required)
 
-Crie `.env` na raiz do backend (ou exporte a variável):
+Create `.env` in the backend's root directory (or export the variable):
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-### 3. Run Locally (com Node)
+### 3. Run Locally (with Node)
 ```bash
-# inicia frontend (Vite) + backend (Uvicorn) em paralelo (Windows-friendly)
+# starts frontend (Vite) + backend (Uvicorn) in parallel (Windows-friendly)
 npm run dev
 
-# somente frontend (porta 3000)
+# frontend only (port 3000)
 npm run web
 
-# somente backend (porta 8000)
+# backend only (port 8000)
 npm run backend:win
 ```
-Visite http://localhost:3000 (ou 3001 se 3000 estiver em uso)
+Visit http://localhost:3000 (or 3001 if 3000 is in use)
 
-Caso o backend esteja em outra URL na sua máquina, exporte antes de buildar o frontend:
+If the backend is at a different URL on your machine, export it before building the frontend:
 ```bash
 set VITE_API_BASE_URL=http://localhost:8000 && npm run web
 ```
 
-### 4. Rodando com Docker (recomendado)
+### 4. Running with Docker (recommended)
 ```bash
 docker compose build --no-cache
 docker compose up -d
 ```
-Ambientes úteis (via docker-compose.yml):
-- `BACKEND_URL` (passa para o build como `VITE_API_BASE_URL` no frontend)
+Useful environment variables (via docker-compose.yml):
+- `BACKEND_URL` (passed to the build as `VITE_API_BASE_URL` for the frontend)
 - `OPENAI_API_KEY` (backend)
 
 URLs:
@@ -208,7 +208,7 @@ Service health check
 
 ## 🎯 Advantages Over Traditional RAG
 
-| Traditional RAG | Vectorless Approach |
+| Traditional RAG | No-Vector Approach |
 |----------------|---------------------|
 | 🗄️ Requires vector database | 🚫 No database needed |
 | 📊 Pre-processes to embeddings | 🔄 Real-time processing |
@@ -247,6 +247,6 @@ MIT License - see LICENSE file for details.
 
 ---
 
-⭐ **Star us on GitHub** if you find this vectorless approach interesting!
+⭐ **Star us on GitHub** if you find this no-vector approach interesting!
 
-Built with ❤️ by [ROE AI Inc.](https://github.com/roe-ai)
+Built with ❤️ by [ROE AI Inc.](https://github.com/yansalim/)

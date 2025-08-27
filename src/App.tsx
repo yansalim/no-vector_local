@@ -37,7 +37,7 @@ export default function App() {
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8 relative">
           <a
-            href="https://github.com/roe-ai/vectorless-chatbot"
+            href="https://github.com/yansalim/no-vector_local/"
             target="_blank"
             rel="noopener noreferrer"
             className="absolute top-0 right-0 text-gray-600 hover:text-gray-900 transition-colors flex items-center space-x-2 group"
@@ -48,7 +48,7 @@ export default function App() {
             </span>
             <GitHubIcon className="w-8 h-8" />
           </a>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Vectorless PDF Chatbot</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">No-Vector PDF Chat</h1>
           <p className="text-gray-600">Chat with your PDF, no vector needed.</p>
         </div>
 
