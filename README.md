@@ -1,23 +1,23 @@
-# Vectorless PDF Chatbot
+# No-Vector PDF Chat
 
 A revolutionary PDF chatbot that uses **no vector embeddings** or traditional RAG. Instead, it leverages Large Language Models for intelligent document selection and page relevance detection, providing a completely stateless and privacy-first experience.
 
-## 🚀 What Makes This "Vectorless"?
+## 🚀 What Makes This "No-Vector"?
 
 Traditional PDF chatbots convert documents into vector embeddings for semantic search. This approach:
-- **❌ Requires expensive vector databases**
-- **❌ Needs pre-processing and indexing**
-- **❌ Stores document data on servers**
-- **❌ Loses context and nuance in embeddings**
+- ❌ **Requires expensive vector databases**
+- ❌ **Needs pre-processing and indexing**
+- ❌ **Stores document data on servers**
+- ❌ **Loses context and nuance in embeddings**
 
-Our **Vectorless** approach:
-- **✅ Uses LLM reasoning instead of vectors**
-- **✅ Processes documents in real-time**
-- **✅ Completely stateless - no server storage**
-- **✅ Preserves full document context**
-- **✅ Privacy-first - documents stay in your browser**
+Our **No-Vector** approach:
+- ✅ **Uses LLM reasoning instead of vectors**
+- ✅ **Processes documents in real-time**
+- ✅ **Completely stateless - no server storage**
+- ✅ **Preserves full document context**
+- ✅ **Privacy-first - documents stay in your browser**
 
-## 🧠 How the Vectorless Process Works
+## 🧠 How the No-Vector Process Works
 
 ### 3-Step Intelligent Document Analysis
 
@@ -62,7 +62,7 @@ graph TD
 - **Real-time Processing**: No pre-indexing required
 
 ### 💡 **Intelligent Processing**
-- **Multi-Model Support**: GPT-4, GPT-5-mini, and more
+- **Multi-Model Support**: GPT-5 GPT-5-mini, and more
 - **Parallel Processing**: Multiple documents analyzed simultaneously
 - **Context Preservation**: Full document context maintained throughout
 - **Dynamic Descriptions**: Edit collection descriptions anytime
@@ -76,53 +76,76 @@ graph TD
 ## 🛠 Technology Stack
 
 ### Frontend
-- **Next.js 15**: React framework with App Router
-- **TypeScript**: Type safety and better development experience
-- **Tailwind CSS**: Modern utility-first styling
-- **Lucide React**: Beautiful, consistent icons
+- **React + Vite**: SPA build with lightning-fast dev server and static output
+- **TypeScript**: Type safety and better DX
+- **Tailwind CSS**: Utility-first styling (via PostCSS plugin)
+- **Lucide React**: Clean, consistent icon set
 
-### Backend (Vercel Functions)
-- **Python Functions**: Serverless API endpoints
-- **PyPDF2**: Reliable PDF text extraction
-- **OpenAI GPT**: Advanced language models for reasoning
-- **Chunked Processing**: Handle large uploads efficiently
+### Backend (FastAPI)
+- **FastAPI + Uvicorn**: High-performance Python API
+- **PyPDF2**: Robust PDF text extraction
+- **OpenAI**: LLM reasoning for doc/page selection and answers
+- **Chunked Processing**: Efficient multi-file uploads
 
 ### Infrastructure
-- **Vercel Deployment**: Seamless serverless hosting
+- **Docker Compose**: One command to run frontend (Nginx) and backend
 - **No Databases**: Completely stateless architecture
-- **Automatic Scaling**: Handle traffic spikes effortlessly
+- **Nginx**: Serves built React app and proxies API
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+ and npm
-- OpenAI API key
+- Python 3.10+ (if you need to start the backend manually)
+- Docker (optional, to run with containers)
+- OpenAI API key (required for full functionality)
 
 ### 1. Clone and Install
 ```bash
-git clone https://github.com/roe-ai/vectorless-chatbot.git
-cd vectorless-chatbot
+git clone https://github.com/yansalim/no-vector_local.git
+cd no-vector_local
 npm install
 ```
 
 ### 2. Environment Setup
-Create `.env.local`:
+- Frontend (dev): uses `VITE_API_BASE_URL` to point to the backend
+- Backend: uses `OPENAI_API_KEY` (required)
+
+Create `.env` in the backend's root directory (or export the variable):
 ```bash
-# Only needed for local development
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-### 3. Run Locally
+### 3. Run Locally (with Node)
 ```bash
+# starts frontend (Vite) + backend (Uvicorn) in parallel (Windows-friendly)
 npm run dev
-```
-Visit http://localhost:3000
 
-### 4. Deploy to Vercel
-1. Push to GitHub
-2. Connect to Vercel
-3. Set environment variable: `OPENAI_API_KEY=your_key`
-4. Deploy! ✅
+# frontend only (port 3000)
+npm run web
+
+# backend only (port 8000)
+npm run backend:win
+```
+Visit http://localhost:3000 (or 3001 if 3000 is in use)
+
+If the backend is at a different URL on your machine, export it before building the frontend:
+```bash
+set VITE_API_BASE_URL=http://localhost:8000 && npm run web
+```
+
+### 4. Running with Docker (recommended)
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+Useful environment variables (via docker-compose.yml):
+- `BACKEND_URL` (passed to the build as `VITE_API_BASE_URL` for the frontend)
+- `OPENAI_API_KEY` (backend)
+
+URLs:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000/health
 
 ## 📖 How to Use
 
@@ -147,14 +170,14 @@ Visit http://localhost:3000
 
 ### Stateless Design
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Browser       │    │  Vercel Functions │    │   OpenAI API    │
-│                 │    │                  │    │                 │
-│ • LocalStorage  │◄──►│ • /api/upload    │◄──►│ • GPT Models    │
-│ • Document Data │    │ • /api/chat/stream│    │ • Real-time     │
-│ • Chat History  │    │ • No Storage     │    │   Processing    │
-│ • Session State │    │ • Stateless      │    │                 │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌───────────────┐    ┌─────────────────┐
+│   Browser       │    │   FastAPI     │    │   OpenAI API    │
+│                 │    │               │    │                 │
+│ • LocalStorage  │◄──►│ • /upload     │◄──►│ • GPT Models    │
+│ • Document Data │    │ • /chat/stream│    │ • Real-time     │
+│ • Chat History  │    │ • /health     │    │   Processing    │
+│ • Session State │    │ • Stateless   │    │                 │
+└─────────────────┘    └───────────────┘    └─────────────────┘
 ```
 
 ### Chunked Upload System
@@ -165,27 +188,27 @@ When uploading large document sets:
 4. **Progressive Results**: Documents become available as chunks complete
 5. **Error Recovery**: Failed chunks can be retried individually
 
-## 🔧 API Endpoints
+## 🔧 API Endpoints (FastAPI)
 
-### `POST /api/upload`
+### `POST /upload`
 Upload and process PDF documents
 - **Input**: FormData with files and description
 - **Output**: Processed documents with extracted text
 - **Features**: Automatic chunking, progress tracking
 
-### `POST /api/chat/stream`
+### `POST /chat/stream`
 Stream chat responses in real-time
 - **Input**: Question, documents, chat history
 - **Output**: Server-sent events with processing steps
 - **Features**: Real-time progress, cost tracking, citations
 
-### `GET /api/health`
+### `GET /health`
 Service health check
 - **Output**: System status and mode information
 
 ## 🎯 Advantages Over Traditional RAG
 
-| Traditional RAG | Vectorless Approach |
+| Traditional RAG | No-Vector Approach |
 |----------------|---------------------|
 | 🗄️ Requires vector database | 🚫 No database needed |
 | 📊 Pre-processes to embeddings | 🔄 Real-time processing |
@@ -224,6 +247,6 @@ MIT License - see LICENSE file for details.
 
 ---
 
-⭐ **Star us on GitHub** if you find this vectorless approach interesting!
+⭐ **Star us on GitHub** if you find this no-vector approach interesting!
 
-Built with ❤️ by [ROE AI Inc.](https://github.com/roe-ai)
+Built with ❤️ by [ROE AI Inc.](https://github.com/yansalim/)

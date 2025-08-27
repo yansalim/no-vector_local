@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vectorless PDF Chatbot",
+  title: "No-Vector PDF Chat",
   description: "Chat with your PDF without RAG",
 };
 
