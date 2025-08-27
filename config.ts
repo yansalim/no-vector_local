@@ -6,7 +6,12 @@ const getApiBaseUrl = () => {
   }
   
   // Otherwise use environment variable or default to localhost
-  return process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+  const viteApi = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
+  // Fallback to Next env for compatibility if present (guard access in browser)
+  const nextApi = typeof process !== 'undefined' && (process as any)?.env
+    ? ((process as any).env.NEXT_PUBLIC_API_BASE_URL as string | undefined)
+    : undefined;
+  return viteApi || nextApi || 'http://localhost:8000';
 };
 
 const apiBaseUrl = getApiBaseUrl();

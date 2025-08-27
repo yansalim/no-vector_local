@@ -102,7 +102,7 @@ async def chat_stream(request: ChatRequest):
     import time
 
     start_time = time.time()
-    print(f"🌊 Streaming chat request started")
+    print("Streaming chat request started")
     print(f"📝 Question: {request.question}")
     print(f"📊 Received {len(request.documents)} documents")
 
@@ -139,7 +139,7 @@ async def chat_stream(request: ChatRequest):
             }
             yield f"data: {json.dumps(doc_selection_status)}\n\n"
 
-            print("⏱️ Step 1: Starting document selection...")
+            print("Step 1: Starting document selection...")
             selected_docs, step1_cost = await llm_service.select_documents(
                 request.description,
                 documents_dict,
@@ -148,7 +148,7 @@ async def chat_stream(request: ChatRequest):
             )
             total_cost += step1_cost
             step1_time = time.time() - step1_start
-            print(f"✅ Step 1: Document selection completed in {step1_time:.2f}s")
+            print(f"Step 1 complete in {step1_time:.2f}s")
 
             # Send completion status for document selection
             doc_selection_complete = {
@@ -174,7 +174,7 @@ async def chat_stream(request: ChatRequest):
             }
             yield f"data: {json.dumps(page_selection_status)}\n\n"
 
-            print("⏱️ Step 2: Starting page selection...")
+            print("Step 2: Starting page selection...")
             # Process documents in parallel to maintain filename context
 
             async def process_document(doc):
@@ -201,7 +201,7 @@ async def chat_stream(request: ChatRequest):
             relevant_pages = all_relevant_pages
             total_cost += step2_cost
             step2_time = time.time() - step2_start
-            print(f"✅ Step 2: Page selection completed in {step2_time:.2f}s")
+            print(f"Step 2 complete in {step2_time:.2f}s")
 
             # Send completion status for page selection
             page_selection_complete = {
@@ -224,7 +224,7 @@ async def chat_stream(request: ChatRequest):
             }
             yield f"data: {json.dumps(answer_generation_status)}\n\n"
 
-            print("⏱️ Step 3: Starting answer generation...")
+            print("Step 3: Starting answer generation...")
 
             # Stream the answer generation
             async for chunk in llm_service.generate_answer_stream(
@@ -240,7 +240,7 @@ async def chat_stream(request: ChatRequest):
                     total_cost += chunk["cost"]
 
             step3_time = time.time() - step3_start
-            print(f"✅ Step 3: Answer generation completed in {step3_time:.2f}s")
+            print(f"Step 3 complete in {step3_time:.2f}s")
 
             # Send final completion
             total_time = time.time() - start_time
@@ -262,13 +262,13 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps(completion_data)}\n\n"
 
             print(
-                f"🎉 Request completed in {total_time:.2f}s, total cost: ${total_cost:.4f}"
+                f"Request completed in {total_time:.2f}s, total cost: ${total_cost:.4f}"
             )
 
         except Exception as e:
             error_data = {"type": "error", "error": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
-            print(f"❌ Error in stream_response: {str(e)}")
+            print(f"Error in stream_response: {str(e)}")
 
     return StreamingResponse(
         stream_response(),

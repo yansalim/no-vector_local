@@ -12,7 +12,7 @@ class LLMService:
     def __init__(self):
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key or api_key == "your_openai_api_key_here":
-            print("⚠️  OpenAI API key not set. LLM features will be disabled.")
+            print("WARNING: OpenAI API key not set. LLM features will be disabled.")
             self.client = None
         else:
             self.client = AsyncOpenAI(api_key=api_key)
@@ -178,7 +178,7 @@ class LLMService:
         import time
 
         chunk_start = time.time()
-        print(f"    🔍 Processing chunk {chunk_index + 1} with {len(chunk)} pages...")
+        print(f"    Processing chunk {chunk_index + 1} with {len(chunk)} pages...")
 
         # Prepare content for LLM
         pages_content = []
@@ -254,13 +254,13 @@ class LLMService:
 
             chunk_time = time.time() - chunk_start
             print(
-                f"    ✅ Chunk {chunk_index + 1} completed in {chunk_time:.2f}s, found {len(relevant_pages)} relevant pages"
+                f"    Chunk {chunk_index + 1} completed in {chunk_time:.2f}s, found {len(relevant_pages)} relevant pages"
             )
             return relevant_pages, cost
 
         except Exception as e:
             chunk_time = time.time() - chunk_start
-            print(f"    ❌ Chunk {chunk_index + 1} failed in {chunk_time:.2f}s: {e}")
+            print(f"    Chunk {chunk_index + 1} failed in {chunk_time:.2f}s: {e}")
             # Fallback: include first page of chunk
             if chunk:
                 first_page = chunk[0].copy()
