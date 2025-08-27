@@ -1,4 +1,4 @@
-# Multi-stage build for Next.js frontend
+## Frontend build (Vite + React)
 FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
@@ -6,34 +6,21 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install dependencies (include dev deps for build)
+RUN npm ci && npm cache clean --force
 
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (Vite outputs to ./dist)
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build
 
-# Production stage for frontend
-FROM node:18-alpine AS frontend
-
-WORKDIR /app
-
-# Copy built application
-COPY --from=frontend-builder /app/.next ./.next
-COPY --from=frontend-builder /app/public ./public
-COPY --from=frontend-builder /app/package*.json ./
-COPY --from=frontend-builder /app/next.config.ts ./
-
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
-
-# Expose port
-EXPOSE 3000
-
-# Start the application
-CMD ["npm", "start"]
+## Production stage for frontend - serve static files via Nginx
+FROM nginx:alpine AS frontend
+COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+EXPOSE 80
 
 # Backend stage
 FROM python:3.11-slim AS backend
